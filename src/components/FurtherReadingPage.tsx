@@ -10,7 +10,7 @@ const sectionOrder: FurtherReadingSectionId[] = ['directories', 'publicCatalogue
 
 export default function FurtherReadingPage() {
   const { furtherReadingResources, loading, error } = useCatalog();
-  const { t } = useTranslation('furtherReading');
+  const { t } = useTranslation(['furtherReading', 'common']);
 
   const sections = useMemo(
     () =>
@@ -28,7 +28,7 @@ export default function FurtherReadingPage() {
           <h1 className="reading-title">{t('title')}</h1>
           <p className="reading-subtitle">{t('subtitle')}</p>
         </div>
-        <div className="catalog-loading">Loading catalog data...</div>
+        <div className="catalog-loading">{t('common:status.loadingCatalog')}</div>
       </div>
     );
   }
@@ -40,7 +40,7 @@ export default function FurtherReadingPage() {
           <h1 className="reading-title">{t('title')}</h1>
           <p className="reading-subtitle">{t('subtitle')}</p>
         </div>
-        <div className="catalog-error" role="alert">Data temporarily unavailable. Please try again later.</div>
+        <div className="catalog-error" role="alert">{t('common:status.dataUnavailable')}</div>
       </div>
     );
   }

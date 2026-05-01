@@ -29,6 +29,10 @@
     "light": "Light",
     "dark": "Dark"
   },
+  "status": {
+    "loadingCatalog": "Loading catalog data...",
+    "dataUnavailable": "Data temporarily unavailable. Please try again later."
+  },
   "meta": {
     "title": "European Alternatives - Discover European & Open Source Software",
     "description": "Discover European and open-source alternatives to US tech giants. Support digital sovereignty, data privacy, and local innovation.",

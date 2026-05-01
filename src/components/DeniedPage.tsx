@@ -7,7 +7,7 @@ import type { Alternative } from '../types';
 
 export default function DeniedPage() {
   const { deniedAlternatives, loading, error } = useCatalog();
-  const { t } = useTranslation(['denied', 'data']);
+  const { t } = useTranslation(['denied', 'data', 'common']);
 
   if (loading) {
     return (
@@ -16,7 +16,7 @@ export default function DeniedPage() {
           <h1 className="denied-title">{t('denied:title')}</h1>
           <p className="denied-subtitle">{t('denied:subtitle')}</p>
         </div>
-        <div className="catalog-loading">Loading catalog data...</div>
+        <div className="catalog-loading">{t('common:status.loadingCatalog')}</div>
       </div>
     );
   }
@@ -28,7 +28,7 @@ export default function DeniedPage() {
           <h1 className="denied-title">{t('denied:title')}</h1>
           <p className="denied-subtitle">{t('denied:subtitle')}</p>
         </div>
-        <div className="catalog-error" role="alert">Data temporarily unavailable. Please try again later.</div>
+        <div className="catalog-error" role="alert">{t('common:status.dataUnavailable')}</div>
       </div>
     );
   }
