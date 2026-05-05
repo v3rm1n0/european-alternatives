@@ -45,7 +45,7 @@
     "hideUSVendorDetails": "Hide details",
     "showUSVendorDetailsFor": "Show US company profiles for {{name}}",
     "hideUSVendorDetailsFor": "Hide US company profiles for {{name}}",
-    "trustScorePending": "Trust-Score Pending",
+    "trustScorePending": "Not rated yet",
     "trustScoreLabel": "Trust Score: {{score}}/10",
     "trustScoreBreakdownTitle": "Trust Score Breakdown",
     "trustScoreBreakdownExplanation": "Each dimension starts at 50% and is adjusted by reservation penalties (−) and positive signals (+). The operational score is the sum of all four dimensions.",
