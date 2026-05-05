@@ -63,10 +63,10 @@ export function withEstimatedPenalties(reservations: Reservation[]): Reservation
   });
 }
 
-/** Return the trust score for sorting — uses the already-assigned score. */
+/** Return the trust score for sorting; pending entries are intentionally unscored. */
 export function getEffectiveTrustScore(
-  alternative: Pick<Alternative, 'trustScore'>,
+  alternative: Pick<Alternative, 'trustScore' | 'trustScoreStatus'>,
 ): number {
+  if (alternative.trustScoreStatus !== 'ready') return 0;
   return alternative.trustScore ?? 0;
 }
-

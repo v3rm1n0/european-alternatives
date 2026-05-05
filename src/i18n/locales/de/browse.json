@@ -45,7 +45,7 @@
     "hideUSVendorDetails": "Details ausblenden",
     "showUSVendorDetailsFor": "US-Unternehmensprofile für {{name}} anzeigen",
     "hideUSVendorDetailsFor": "US-Unternehmensprofile für {{name}} ausblenden",
-    "trustScorePending": "Trust-Score ausstehend",
+    "trustScorePending": "Noch nicht bewertet",
     "trustScoreLabel": "Trust-Score: {{score}}/10",
     "trustScoreBreakdownTitle": "Trust-Score-Aufschluesselung",
     "trustScoreBreakdownExplanation": "Jede Dimension startet bei 50% und wird durch Vorbehaltsabzuege (−) und positive Signale (+) angepasst. Der operative Score ist die Summe aller vier Dimensionen.",
