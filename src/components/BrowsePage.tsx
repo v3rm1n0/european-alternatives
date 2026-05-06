@@ -359,7 +359,11 @@ export default function BrowsePage() {
             </svg>
             {t('compare.open')}
           </button>
-          <button className="compare-floating-clear" onClick={handleClearCompare}>
+          <button
+            className="compare-floating-clear"
+            onClick={handleClearCompare}
+            aria-label={t('compare.clear')}
+          >
             ✕
           </button>
         </div>
