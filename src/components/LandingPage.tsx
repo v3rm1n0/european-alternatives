@@ -28,7 +28,7 @@ export default function LandingPage() {
   if (loading) {
     return (
       <div className="landing-page">
-        <div className="catalog-loading">Loading catalog data...</div>
+        <div className="catalog-loading">{t('common:status.loadingCatalog')}</div>
       </div>
     );
   }
@@ -36,7 +36,7 @@ export default function LandingPage() {
   if (error) {
     return (
       <div className="landing-page">
-        <div className="catalog-error" role="alert">Data temporarily unavailable. Please try again later.</div>
+        <div className="catalog-error" role="alert">{t('common:status.dataUnavailable')}</div>
       </div>
     );
   }

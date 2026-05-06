@@ -5,6 +5,14 @@
   "catalogueComingSoonDesc": "We're building a comprehensive directory of European and open-source alternatives. Check back soon or contribute to the project.",
   "noResults": "No Results Found",
   "noResultsDesc": "No alternatives match your current filters. Try adjusting your search or filter criteria.",
+  "compare": {
+    "selectedCount_one": "{{count}} card selected for comparison",
+    "selectedCount_other": "{{count}} cards selected for comparison",
+    "open": "Compare"
+  },
+  "overlay": {
+    "close": "Close"
+  },
   "filters": {
     "searchPlaceholder": "Search alternatives...",
     "searchLabel": "Search alternatives",
