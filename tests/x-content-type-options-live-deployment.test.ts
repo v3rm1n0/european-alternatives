@@ -170,7 +170,7 @@ async function waitForLiveHeaderCheck(
   deadline: number,
 ): Promise<string | null> {
   let attempts = 0
-  let lastFailure = 'No response received.'
+  let lastFailure: string
 
   while (true) {
     attempts += 1

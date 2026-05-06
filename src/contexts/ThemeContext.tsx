@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -89,8 +89,6 @@ interface ThemeProviderProps {
 export function ThemeProvider({ children }: ThemeProviderProps) {
   const [preference, setPreferenceState] = useState<ThemePreference>(readStoredPreference);
   const [effectiveTheme, setEffectiveTheme] = useState<EffectiveTheme>(() => resolveTheme(readStoredPreference()));
-  const preferenceRef = useRef(preference);
-  preferenceRef.current = preference;
 
   const setPreference = useCallback((pref: ThemePreference) => {
     setPreferenceState(pref);
@@ -101,10 +99,10 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
   }, []);
 
   const cycleTheme = useCallback(() => {
-    const currentIndex = THEME_CYCLE.indexOf(preferenceRef.current);
+    const currentIndex = THEME_CYCLE.indexOf(preference);
     const next = THEME_CYCLE[(currentIndex + 1) % THEME_CYCLE.length];
     setPreference(next);
-  }, [setPreference]);
+  }, [preference, setPreference]);
 
   // Apply theme on mount (in case inline script in <head> didn't run)
   useEffect(() => {

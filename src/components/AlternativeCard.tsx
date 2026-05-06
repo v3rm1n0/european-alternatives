@@ -261,14 +261,15 @@ export default function AlternativeCard({ alternative, viewMode, usVendorLookup,
   const openSourceLevel = getOpenSourceLevel(alternative);
   const openSourceBadge = getOpenSourceBadgeConfig(openSourceLevel);
   const visibleTags = alternative.tags.filter((tag) => !opennessTagKeys.has(normalizeTagKey(tag)));
+  const [renderTimestamp] = useState(() => Date.now());
 
   const isNew = useMemo(() => {
     if (!alternative.dateAdded) return false;
     const added = new Date(alternative.dateAdded + 'T00:00:00');
     if (isNaN(added.getTime())) return false;
-    const diffDays = (Date.now() - added.getTime()) / (1000 * 60 * 60 * 24);
+    const diffDays = (renderTimestamp - added.getTime()) / (1000 * 60 * 60 * 24);
     return diffDays >= 0 && diffDays <= 30;
-  }, [alternative.dateAdded]);
+  }, [alternative.dateAdded, renderTimestamp]);
 
   return (
     <motion.div
