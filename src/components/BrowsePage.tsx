@@ -7,6 +7,7 @@ import { useCatalog } from "../contexts/CatalogContext";
 import AlternativeCard from "./AlternativeCard";
 import Filters from "./Filters";
 import CategoryMatrixFilterPanel from "./CategoryMatrixFilterPanel";
+import CategoryMatrixView from "./CategoryMatrixView";
 import { fetchCategoryMatrix } from "../data/categoryMatrix";
 import { getLocalizedAlternativeDescription } from "../utils/alternativeText";
 import { getAlternativeCategories } from "../utils/alternativeCategories";
@@ -16,6 +17,7 @@ import {
   matrixAlternativeMatchesFilters,
 } from "../utils/categoryMatrixFilters";
 import type {
+  CardViewMode,
   CategoryId,
   CategoryMatrixLoadResult,
   CategoryMatrixState,
@@ -116,6 +118,15 @@ export default function BrowsePage() {
 
     return { status: "loading", matrix: null, error: null };
   }, [loadedCategoryMatrix, matrixCategory, i18n.language]);
+  const readyCategoryMatrix =
+    categoryMatrixState.status === "ready" ? categoryMatrixState.matrix : null;
+  const matrixViewAvailable =
+    categoryFilters.length === 1 &&
+    readyCategoryMatrix !== null &&
+    readyCategoryMatrix.meta.criterionCount > 0 &&
+    readyCategoryMatrix.meta.alternativeCount > 0 &&
+    readyCategoryMatrix.data.alternatives.length > 0 &&
+    readyCategoryMatrix.data.groups.some((group) => group.criteria.length > 0);
 
   useEffect(() => {
     if (matrixCategory === null) {
@@ -244,6 +255,7 @@ export default function BrowsePage() {
           latestParamsRef.current = params;
           setSearchParamsRef.current(params, { replace: true });
           if (nextMatrixCategory !== matrixCategory) {
+            setViewMode("grid");
             setMatrixFilterCategory(
               nextMatrixCategory ?? INACTIVE_MATRIX_FILTER_CATEGORY,
             );
@@ -276,6 +288,7 @@ export default function BrowsePage() {
     setCountryFilters([]);
     setPricingFilters([]);
     setOpenSourceOnly(false);
+    setViewMode("grid");
     setMatrixFilterCategory(INACTIVE_MATRIX_FILTER_CATEGORY);
     setMatrixFilters({});
   }, []);
@@ -395,6 +408,15 @@ export default function BrowsePage() {
     sortBy,
     i18n.language,
   ]);
+  const visibleMatrixAlternativeIds = useMemo(
+    () => new Set(filteredAlternatives.map((alternative) => alternative.id)),
+    [filteredAlternatives],
+  );
+  const effectiveViewMode: ViewMode =
+    viewMode === "matrix" && !matrixViewAvailable ? "grid" : viewMode;
+  const cardViewMode: CardViewMode =
+    effectiveViewMode === "list" ? "list" : "grid";
+  const showMatrixView = effectiveViewMode === "matrix" && matrixViewAvailable;
 
   const expandedAlternatives = useMemo(
     () => filteredAlternatives.filter((alt) => expandedCardIds.has(alt.id)),
@@ -455,10 +477,11 @@ export default function BrowsePage() {
           onClearAll={handleClearAll}
           sortBy={sortBy}
           onSortChange={setSortBy}
-          viewMode={viewMode}
+          viewMode={effectiveViewMode}
           onViewModeChange={setViewMode}
           totalCount={alternatives.length}
           filteredCount={filteredAlternatives.length}
+          matrixViewAvailable={matrixViewAvailable}
         />
 
         <CategoryMatrixFilterPanel
@@ -468,28 +491,37 @@ export default function BrowsePage() {
         />
 
         {filteredAlternatives.length > 0 ? (
-          <div className={`alt-grid${viewMode === "list" ? " list-view" : ""}`}>
-            {filteredAlternatives.map((alternative, index) => (
-              <motion.div
-                key={alternative.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.4,
-                  delay: Math.min(0.1 + index * 0.05, 1),
-                }}
-              >
-                <AlternativeCard
-                  alternative={alternative}
-                  viewMode={viewMode}
-                  usVendorLookup={usVendorLookup}
-                  onExpand={handleExpand}
-                  isComparing={compareCardIds.has(alternative.id)}
-                  onToggleCompare={handleToggleCompare}
-                />
-              </motion.div>
-            ))}
-          </div>
+          showMatrixView && readyCategoryMatrix !== null ? (
+            <CategoryMatrixView
+              matrix={readyCategoryMatrix}
+              visibleAlternativeIds={visibleMatrixAlternativeIds}
+            />
+          ) : (
+            <div
+              className={`alt-grid${cardViewMode === "list" ? " list-view" : ""}`}
+            >
+              {filteredAlternatives.map((alternative, index) => (
+                <motion.div
+                  key={alternative.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    duration: 0.4,
+                    delay: Math.min(0.1 + index * 0.05, 1),
+                  }}
+                >
+                  <AlternativeCard
+                    alternative={alternative}
+                    viewMode={cardViewMode}
+                    usVendorLookup={usVendorLookup}
+                    onExpand={handleExpand}
+                    isComparing={compareCardIds.has(alternative.id)}
+                    onToggleCompare={handleToggleCompare}
+                  />
+                </motion.div>
+              ))}
+            </div>
+          )
         ) : (
           <motion.div
             className="no-results"
@@ -571,7 +603,7 @@ export default function BrowsePage() {
                   </button>
                   <AlternativeCard
                     alternative={alternative}
-                    viewMode={viewMode}
+                    viewMode={cardViewMode}
                     usVendorLookup={usVendorLookup}
                     overlayMode
                   />

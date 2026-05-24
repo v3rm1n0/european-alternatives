@@ -48,6 +48,7 @@ import type {
   MatrixValueType,
   NotApplicableMatrixFact,
   UnverifiedMatrixFact,
+  ViewMode,
   VerifiedMatrixFact,
 } from "../src/types";
 
@@ -240,6 +241,7 @@ expectTypeOf<MatrixFactValue>().toEqualTypeOf<
 expectTypeOf<MatrixFilterPrimitive>().toEqualTypeOf<
   boolean | number | string
 >();
+expectTypeOf<ViewMode>().toEqualTypeOf<"grid" | "list" | "matrix">();
 
 expectTypeOf<CategoryMatrixApiResponse>().toEqualTypeOf<{
   data: CategoryMatrixData;

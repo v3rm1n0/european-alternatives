@@ -1,0 +1,615 @@
+import { createElement } from "react";
+import type { ComponentType, Dispatch, ReactNode, SetStateAction } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import type {
+  Alternative,
+  Category,
+  CategoryId,
+  CategoryMatrixApiResponse,
+  CategoryMatrixLoadResult,
+  MatrixAlternative,
+  MatrixCriterion,
+  MatrixFact,
+  MatrixFilterMode,
+  ViewMode,
+} from "../src/types";
+
+type BrowseViewModeForTest = ViewMode | "matrix";
+
+type LoadedCategoryMatrixFixture = {
+  category: CategoryId;
+  language: string;
+  result: CategoryMatrixLoadResult;
+};
+
+type CapturedFiltersProps = {
+  matrixViewAvailable: boolean;
+  viewMode: string | undefined;
+};
+
+type BrowseEffect = () => void | (() => void);
+
+const browseTestMocks = vi.hoisted(() => ({
+  catalog: null as unknown,
+  effects: [] as BrowseEffect[],
+  fetchCategoryMatrix: vi.fn(),
+  filterProps: [] as CapturedFiltersProps[],
+  language: "en",
+  loadedCategoryMatrix: undefined as unknown,
+  search: "",
+  setSearchParams: vi.fn(),
+  setViewMode: vi.fn(),
+  viewMode: "grid" as BrowseViewModeForTest,
+}));
+
+vi.mock("react", async () => {
+  const actual = await vi.importActual<typeof import("react")>("react");
+
+  return {
+    ...actual,
+    useEffect: (effect: BrowseEffect) => {
+      browseTestMocks.effects.push(effect);
+    },
+    useState: <State>(initialState: State | (() => State)) => {
+      if (initialState === "grid") {
+        return [
+          browseTestMocks.viewMode as State,
+          browseTestMocks.setViewMode as Dispatch<SetStateAction<State>>,
+        ];
+      }
+
+      if (
+        browseTestMocks.loadedCategoryMatrix !== undefined &&
+        initialState === null
+      ) {
+        return [
+          browseTestMocks.loadedCategoryMatrix as State,
+          vi.fn() as Dispatch<SetStateAction<State>>,
+        ];
+      }
+
+      return actual.useState(initialState);
+    },
+  };
+});
+
+vi.mock("react-i18next", () => {
+  const translations: Record<string, string> = {
+    title: "Browse alternatives",
+    subtitle: "Find European alternatives",
+    noResults: "No results",
+    noResultsDesc: "No alternatives match.",
+    catalogueComingSoon: "Catalogue coming soon",
+    catalogueComingSoonDesc: "Check back soon.",
+    "matrixFilters.title": "Category fit filters",
+    "matrixFilters.subtitle": "{{category}} criteria",
+    "matrixFilters.empty":
+      "No category-specific fit filters are available for this category.",
+    "matrixFilters.loading": "Loading category criteria...",
+    "matrixFilters.error":
+      "Category criteria could not be loaded. Browse results remain available.",
+    "matrixFilters.unverifiedIncludedByDefault":
+      "Unverified results stay visible by default.",
+    "matrixFilters.modes.must_match": "Must match",
+    "matrixFilters.modes.multi_select": "Multi-select",
+    "matrixView.title": "{{category}} comparison matrix",
+    "matrixView.yes": "Yes",
+    "matrixView.no": "No",
+    "matrixView.unverified": "Unverified",
+    "matrixView.notApplicable": "Not applicable",
+    "compare.selectedCount": "{{count}} card selected for comparison",
+    "compare.open": "Compare",
+    "compare.clear": "Clear comparison selection",
+    "overlay.close": "Close",
+  };
+
+  return {
+    useTranslation: () => ({
+      i18n: { language: browseTestMocks.language },
+      t: (key: string, values?: Record<string, string | number>) => {
+        const template = translations[key] ?? key;
+
+        return template.replace(/\{\{(\w+)\}\}/gu, (_match, name: string) =>
+          String(values?.[name] ?? ""),
+        );
+      },
+    }),
+  };
+});
+
+vi.mock("react-router-dom", () => ({
+  useSearchParams: () => [
+    new URLSearchParams(browseTestMocks.search),
+    browseTestMocks.setSearchParams,
+  ],
+}));
+
+vi.mock("../src/contexts/CatalogContext", () => ({
+  useCatalog: () => browseTestMocks.catalog,
+}));
+
+vi.mock("../src/data/categoryMatrix", () => ({
+  fetchCategoryMatrix: browseTestMocks.fetchCategoryMatrix,
+}));
+
+vi.mock("../src/components/Filters", async () => {
+  const React = await vi.importActual<typeof import("react")>("react");
+
+  return {
+    default: ({
+      matrixViewAvailable,
+      viewMode,
+    }: {
+      matrixViewAvailable?: boolean;
+      viewMode?: string;
+    }) => {
+      browseTestMocks.filterProps.push({
+        matrixViewAvailable: matrixViewAvailable === true,
+        viewMode,
+      });
+
+      return React.createElement(
+        "div",
+        {
+          "data-browse-test": "global-filters",
+          "data-matrix-view-available":
+            matrixViewAvailable === true ? "true" : "false",
+          "data-view-mode": viewMode,
+        },
+        "Global Filters",
+      );
+    },
+  };
+});
+
+vi.mock("../src/components/AlternativeCard", async () => {
+  const React = await vi.importActual<typeof import("react")>("react");
+
+  return {
+    default: ({
+      alternative,
+      viewMode,
+    }: {
+      alternative: Alternative;
+      viewMode: string;
+    }) =>
+      React.createElement(
+        "article",
+        {
+          "data-browse-test": "result-card",
+          "data-view-mode": viewMode,
+        },
+        alternative.name,
+      ),
+  };
+});
+
+vi.mock("framer-motion", async () => {
+  const React = await vi.importActual<typeof import("react")>("react");
+  const motionProps = new Set([
+    "animate",
+    "exit",
+    "initial",
+    "transition",
+    "variants",
+    "whileHover",
+    "whileTap",
+  ]);
+  const createMotionComponent =
+    (tag: string) =>
+    ({
+      children,
+      ...props
+    }: Record<string, unknown> & { children?: ReactNode }) => {
+      const domProps = Object.fromEntries(
+        Object.entries(props).filter(([key]) => !motionProps.has(key)),
+      );
+
+      return React.createElement(tag, domProps, children);
+    };
+
+  return {
+    motion: new Proxy(
+      {},
+      {
+        get: (_target, tag) => createMotionComponent(String(tag)),
+      },
+    ),
+  };
+});
+
+beforeEach(() => {
+  browseTestMocks.catalog = createBrowseCatalog();
+  browseTestMocks.effects = [];
+  browseTestMocks.fetchCategoryMatrix.mockReturnValue(new Promise(() => {}));
+  browseTestMocks.filterProps = [];
+  browseTestMocks.language = "en";
+  browseTestMocks.loadedCategoryMatrix = undefined;
+  browseTestMocks.search = "";
+  browseTestMocks.setSearchParams.mockClear();
+  browseTestMocks.setViewMode.mockClear();
+  browseTestMocks.viewMode = "grid";
+});
+
+async function renderBrowsePage(
+  options: {
+    language?: string;
+    loadedCategoryMatrix?: LoadedCategoryMatrixFixture;
+    search?: string;
+    viewMode?: BrowseViewModeForTest;
+  } = {},
+): Promise<string> {
+  browseTestMocks.effects = [];
+  browseTestMocks.filterProps = [];
+  browseTestMocks.language = options.language ?? "en";
+  browseTestMocks.loadedCategoryMatrix =
+    options.loadedCategoryMatrix ?? undefined;
+  browseTestMocks.search = options.search ?? "";
+  browseTestMocks.viewMode = options.viewMode ?? "grid";
+
+  const browseModule = (await import("../src/components/BrowsePage")) as {
+    default: ComponentType;
+  };
+
+  return renderToStaticMarkup(createElement(browseModule.default));
+}
+
+function criterion(
+  id: string,
+  filterMode: MatrixFilterMode,
+  overrides: Partial<MatrixCriterion> = {},
+): MatrixCriterion {
+  return {
+    id,
+    label: overrides.label ?? id,
+    helpText: overrides.helpText ?? null,
+    valueType: overrides.valueType ?? "boolean",
+    semantics: overrides.semantics ?? "informational",
+    filterMode,
+    options: overrides.options ?? [],
+  };
+}
+
+function matrixAlternative(
+  id: string,
+  name: string,
+  facts: Record<string, MatrixFact>,
+): MatrixAlternative {
+  return {
+    id,
+    name,
+    website: `https://${id}.example`,
+    logo: null,
+    country: "de",
+    category: "messaging",
+    secondaryCategories: [],
+    facts,
+  };
+}
+
+function readyMatrixResult(): CategoryMatrixLoadResult {
+  return {
+    status: "ready",
+    matrix: matrix(
+      [
+        {
+          id: "privacy",
+          label: "Privacy",
+          description: null,
+          criteria: [
+            criterion("e2ee", "must_match", {
+              label: "End-to-end encryption",
+              valueType: "boolean",
+            }),
+            criterion("hosting_region", "must_match", {
+              label: "Hosting region",
+              valueType: "enum",
+              options: [
+                { id: "eu", label: "EU hosted", displayTone: "positive" },
+                { id: "global", label: "Global", displayTone: "warning" },
+              ],
+            }),
+            criterion("privacy_policy", "none", {
+              label: "Privacy policy",
+              valueType: "url",
+            }),
+          ],
+        },
+        {
+          id: "portability",
+          label: "Portability",
+          description: null,
+          criteria: [
+            criterion("retention_days", "none", {
+              label: "Data retention days",
+              valueType: "number",
+            }),
+            criterion("export_formats", "none", {
+              label: "Data export formats",
+              valueType: "multi_enum",
+              options: [
+                { id: "csv", label: "CSV export" },
+                { id: "json", label: "JSON export" },
+              ],
+            }),
+            criterion("support_sla", "none", {
+              label: "Support SLA",
+              valueType: "text",
+            }),
+          ],
+        },
+      ],
+      [
+        matrixAlternative("zeta-chat", "Zeta Chat", {
+          e2ee: { status: "verified", value: false },
+          hosting_region: { status: "verified", value: "global" },
+          privacy_policy: {
+            status: "verified",
+            value: "https://zeta-chat.example/privacy",
+          },
+          retention_days: { status: "verified", value: 1234 },
+          export_formats: { status: "unverified", value: null },
+          support_sla: { status: "verified", value: "Community support" },
+        }),
+        matrixAlternative("alpha-chat", "Alpha Chat", {
+          e2ee: { status: "verified", value: true },
+          hosting_region: { status: "verified", value: "eu" },
+          privacy_policy: {
+            status: "verified",
+            value: "javascript:alert(1)",
+          },
+          retention_days: { status: "verified", value: 7 },
+          export_formats: {
+            status: "verified",
+            value: ["csv", "json"],
+          },
+          support_sla: { status: "not_applicable", value: null },
+        }),
+      ],
+    ),
+    error: null,
+  };
+}
+
+function emptyMatrixResult(): CategoryMatrixLoadResult {
+  return {
+    status: "empty",
+    matrix: matrix([]),
+    error: null,
+  };
+}
+
+function unavailableMatrixResult(): CategoryMatrixLoadResult {
+  return {
+    status: "unavailable",
+    matrix: null,
+    error: {
+      code: "not_found",
+      message: "Matrix unavailable",
+    },
+  };
+}
+
+function matrix(
+  groups: CategoryMatrixApiResponse["data"]["groups"],
+  alternatives: MatrixAlternative[] = [],
+): CategoryMatrixApiResponse {
+  const criterionCount = groups.reduce(
+    (count, group) => count + group.criteria.length,
+    0,
+  );
+
+  return {
+    data: {
+      category: {
+        id: "messaging",
+        name: "Messaging",
+        description: "Secure messaging and chat apps",
+        emoji: "chat",
+      },
+      groups,
+      alternatives,
+    },
+    meta: {
+      category: "messaging",
+      locale: "en",
+      groupCount: groups.length,
+      criterionCount,
+      alternativeCount: alternatives.length,
+    },
+  };
+}
+
+function loadedMatrix(
+  category: CategoryId,
+  result: CategoryMatrixLoadResult,
+  language = "en",
+): LoadedCategoryMatrixFixture {
+  return { category, language, result };
+}
+
+function createBrowseCatalog() {
+  const categories: Category[] = [
+    {
+      id: "messaging",
+      name: "Messaging",
+      description: "Secure messaging",
+      usGiants: [],
+      emoji: "chat",
+    },
+    {
+      id: "email",
+      name: "Email",
+      description: "Email providers",
+      usGiants: [],
+      emoji: "mail",
+    },
+    {
+      id: "other",
+      name: "Other",
+      description: "Other tools",
+      usGiants: [],
+      emoji: "other",
+    },
+  ];
+
+  return {
+    alternatives: [
+      browseAlternative("alpha-chat", "Alpha Chat", "messaging"),
+      browseAlternative("zeta-chat", "Zeta Chat", "messaging"),
+      browseAlternative("inbox-eu", "Inbox EU", "email"),
+      browseAlternative("other-option", "Other Option", "other"),
+    ],
+    categories,
+    deniedAlternatives: [],
+    error: null,
+    furtherReadingResources: [],
+    landingCategoryGroups: [],
+    loading: false,
+    usVendors: [],
+  };
+}
+
+function browseAlternative(
+  id: string,
+  name: string,
+  category: CategoryId,
+): Alternative {
+  return {
+    id,
+    name,
+    description: `${name} description`,
+    website: `https://${id}.example`,
+    country: "de",
+    category,
+    secondaryCategories: [],
+    replacesUS: [],
+    isOpenSource: true,
+    pricing: "free",
+    tags: [category],
+    trustScoreStatus: "ready",
+    trustScore: 90,
+  };
+}
+
+function expectInOrder(html: string, labels: string[]): void {
+  const indices = labels.map((label) => html.indexOf(label));
+
+  for (let index = 0; index < labels.length; index += 1) {
+    expect(
+      indices[index],
+      `${labels[index]} should be rendered`,
+    ).toBeGreaterThanOrEqual(0);
+
+    if (index > 0) {
+      expect(
+        indices[index],
+        `${labels[index]} should render after ${labels[index - 1]}`,
+      ).toBeGreaterThan(indices[index - 1]);
+    }
+  }
+}
+
+describe("browse matrix view mode", () => {
+  it("offers matrix mode only for a single selected category with ready non-empty matrix data", async () => {
+    await renderBrowsePage();
+    expect(browseTestMocks.filterProps[0]?.matrixViewAvailable).toBe(false);
+
+    await renderBrowsePage({ search: "category=messaging&category=email" });
+    expect(browseTestMocks.filterProps[0]?.matrixViewAvailable).toBe(false);
+
+    await renderBrowsePage({ search: "category=other" });
+    expect(browseTestMocks.filterProps[0]?.matrixViewAvailable).toBe(false);
+
+    await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", emptyMatrixResult()),
+      search: "category=messaging",
+    });
+    expect(browseTestMocks.filterProps[0]?.matrixViewAvailable).toBe(false);
+
+    await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix(
+        "messaging",
+        unavailableMatrixResult(),
+      ),
+      search: "category=messaging",
+    });
+    expect(browseTestMocks.filterProps[0]?.matrixViewAvailable).toBe(false);
+
+    await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      search: "category=messaging",
+    });
+    expect(browseTestMocks.filterProps[0]?.matrixViewAvailable).toBe(true);
+  });
+
+  it("renders matrix mode as grouped criteria rows and stable alternative columns instead of normal cards", async () => {
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      search: "category=messaging",
+      viewMode: "matrix",
+    });
+
+    expect(html).not.toContain('data-browse-test="result-card"');
+    expect(html).toContain("<table");
+    expect(html).toContain("Messaging comparison matrix");
+    expect(html).toContain('tabindex="0"');
+    expectInOrder(html, [
+      "Privacy",
+      "End-to-end encryption",
+      "Hosting region",
+      "Privacy policy",
+      "Portability",
+      "Data retention days",
+      "Data export formats",
+      "Support SLA",
+    ]);
+    expectInOrder(html, ["Zeta Chat", "Alpha Chat"]);
+    expect(html).toContain("Yes");
+    expect(html).toContain("No");
+    expect(html).toContain("EU hosted");
+    expect(html).toContain('href="https://zeta-chat.example/privacy"');
+    expect(html).not.toContain('href="javascript:alert(1)"');
+    expect(html).toContain("javascript:alert(1)");
+    expect(html).toContain("1,234");
+    expect(html).toContain("CSV export");
+    expect(html).toContain("JSON export");
+    expect(html).toContain("Community support");
+    expect(html).toContain("Unverified");
+    expect(html).toContain("Not applicable");
+    expect(html).not.toMatch(/needs-deeper-research|manual-human/iu);
+  });
+
+  it("falls back to the card grid when matrix mode is active but unavailable", async () => {
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", emptyMatrixResult()),
+      search: "category=messaging",
+      viewMode: "matrix",
+    });
+
+    expect(browseTestMocks.filterProps[0]?.matrixViewAvailable).toBe(false);
+    expect(browseTestMocks.filterProps[0]?.viewMode).toBe("grid");
+    expect(html).not.toContain("<table");
+    expect(html).toContain('data-browse-test="result-card"');
+    expect(html).toContain('data-view-mode="grid"');
+  });
+
+  it("limits matrix columns to the alternatives visible after browse filters", async () => {
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      search: "category=messaging&q=alpha",
+      viewMode: "matrix",
+    });
+
+    expect(html).toContain("<table");
+    expect(html).toContain("Alpha Chat");
+    expect(html).not.toContain("Zeta Chat");
+    expect(html).toContain("EU hosted");
+    expect(html).not.toContain("https://zeta-chat.example/privacy");
+    expect(html).not.toContain("1,234");
+    expect(html).not.toContain("Community support");
+  });
+});

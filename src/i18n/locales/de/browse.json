@@ -26,6 +26,7 @@
     "sortCategory": "Kategorie",
     "gridView": "Rasteransicht",
     "listView": "Listenansicht",
+    "matrixView": "Matrixansicht",
     "filters": "Filter",
     "clearAll": "Alle Filter löschen",
     "categoryTitle": "Kategorie",
@@ -56,6 +57,14 @@
       "range": "Bereich",
       "multi_select": "Mehrfachauswahl"
     }
+  },
+  "matrixView": {
+    "title": "Vergleichsmatrix fuer {{category}}",
+    "criteriaColumn": "Kriterium",
+    "yes": "Ja",
+    "no": "Nein",
+    "unverified": "Unverified",
+    "notApplicable": "Nicht anwendbar"
   },
   "card": {
     "showMore": "Mehr anzeigen",
