@@ -148,12 +148,56 @@ Trust scores are dynamically computed on every API request by `api/catalog/scori
 
 ## Scripts Reference
 
-| Script                  | Language | Purpose                                                                                        |
-| ----------------------- | -------- | ---------------------------------------------------------------------------------------------- |
-| `scripts/db-schema.sql` | SQL      | Full DDL for all 23 tables (run via `mysql` CLI)                                               |
-| `scripts/db-import.php` | PHP      | Read `catalog.json`, seed catalog and matrix tables in a single transaction with advisory lock |
-| `scripts/db-backup.sh`  | Bash     | Backup the MySQL database                                                                      |
-| `scripts/db-restore.sh` | Bash     | Restore a database backup                                                                      |
+| Script                               | Language | Purpose                                                                                        |
+| ------------------------------------ | -------- | ---------------------------------------------------------------------------------------------- |
+| `scripts/db-schema.sql`              | SQL      | Full DDL for all 23 tables (run via `mysql` CLI)                                               |
+| `scripts/db-import.php`              | PHP      | Read `catalog.json`, seed catalog and matrix tables in a single transaction with advisory lock |
+| `scripts/matrix-research-select.php` | PHP      | Select one open matrix fact for the external research loop, with targeting and dry-run support |
+| `scripts/db-backup.sh`               | Bash     | Backup the MySQL database                                                                      |
+| `scripts/db-restore.sh`              | Bash     | Restore a database backup                                                                      |
+
+### Matrix Research Selector
+
+Use the selector when an operator or automation loop needs exactly one open matrix fact to research:
+
+```bash
+php scripts/matrix-research-select.php [--category messaging] [--entry primary-chat] [--criterion e2ee] [--dry-run]
+```
+
+Target options can be combined:
+
+- `--category <category_id>` selects within one matrix category.
+- `--entry <entry_slug>` or `--entry-slug <entry_slug>` selects within one catalog entry.
+- `--criterion <criterion_key>` selects within one criterion key.
+
+Without target options, the selector chooses the next open fact across active alternatives. Partial targets choose the next open fact within that scope. A real run marks the selected fact as `researching`; `--dry-run` prints the target that would be selected without writing to the database.
+
+Successful selections print JSON to stdout:
+
+```json
+{
+  "factId": 123,
+  "categoryId": "messaging",
+  "categoryName": "Messaging",
+  "entrySlug": "primary-chat",
+  "entryName": "Primary Chat",
+  "criterionKey": "e2ee",
+  "criterionLabel": "End-to-end encryption",
+  "valueType": "boolean",
+  "previousStatus": "open",
+  "status": "researching",
+  "dryRun": false
+}
+```
+
+In dry-run mode, `dryRun` is `true` and `status` remains the previous fact status.
+
+| Exit code | Meaning                                                                                                                                |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`       | A fact was selected, or dry-run found the fact that would be selected.                                                                 |
+| `2`       | No open matrix fact matched the requested scope. The script prints `No open matrix fact available for the requested scope.` to stderr. |
+| `64`      | Invalid CLI usage, such as an unknown option or a missing option value.                                                                |
+| `1`       | Database or unexpected runtime failure.                                                                                                |
 
 ---
 
