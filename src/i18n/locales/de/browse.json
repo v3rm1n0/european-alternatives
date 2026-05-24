@@ -48,6 +48,8 @@
     "maximumFor": "Maximum fuer {{criterion}}",
     "valuePlaceholder": "Wert",
     "unverified": "Unverified",
+    "includeUnverified": "Unverified einbeziehen",
+    "unverifiedIncludedByDefault": "Unverified-Ergebnisse bleiben standardmaessig sichtbar.",
     "modes": {
       "optional": "Optional",
       "must_match": "Muss passen",

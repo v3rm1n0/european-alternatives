@@ -245,7 +245,8 @@ For bug fixes, features, and improvements to the application itself.
 Understanding the codebase will help you contribute effectively:
 
 - **URL is the source of truth** for category and search filters. These are derived from `useSearchParams()`, not local React state.
-- **Local state** is used for non-URL filters (country, pricing, open source toggle, sort order, view mode).
+- **Local state** is used for non-URL filters (country, pricing, open source toggle, category-specific fit filters), sort order, and view mode.
+- **Category-specific fit filters** appear only when exactly one category with comparison data is selected. They compose with global filters, keep `Unverified` results visible by default, and reset or become inactive when users leave that single-category context.
 - **`latestParamsRef`** prevents stale reads when multiple URL updates happen in the same tick.
 - **`setSearchParamsRef`** avoids dependency array issues with `useCallback`.
 - **Logo fallback** — all logo `<img>` elements have an `onError` handler that switches to a country flag icon.

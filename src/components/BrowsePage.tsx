@@ -11,11 +11,16 @@ import { fetchCategoryMatrix } from "../data/categoryMatrix";
 import { getLocalizedAlternativeDescription } from "../utils/alternativeText";
 import { getAlternativeCategories } from "../utils/alternativeCategories";
 import { getEffectiveTrustScore } from "../utils/trustScore";
+import {
+  hasActiveMatrixFilters,
+  matrixAlternativeMatchesFilters,
+} from "../utils/categoryMatrixFilters";
 import type {
   CategoryId,
   CategoryMatrixLoadResult,
   CategoryMatrixState,
   CountryCode,
+  MatrixFilterSelections,
   SelectedFilters,
   SortBy,
   ViewMode,
@@ -26,6 +31,8 @@ interface LoadedCategoryMatrix {
   language: string;
   result: CategoryMatrixLoadResult;
 }
+
+const INACTIVE_MATRIX_FILTER_CATEGORY = "__inactive__";
 
 export default function BrowsePage() {
   const { alternatives, usVendors, categories, loading, error } = useCatalog();
@@ -81,6 +88,18 @@ export default function BrowsePage() {
     categoryFilters.length === 1 && categoryFilters[0] !== "other"
       ? categoryFilters[0]
       : null;
+  // Matrix filters are category-scoped local UI state, not URL state. Their
+  // criterion ids and option values come from the asynchronously loaded matrix.
+  const [matrixFilters, setMatrixFilters] = useState<MatrixFilterSelections>(
+    {},
+  );
+  const [matrixFilterCategory, setMatrixFilterCategory] = useState<
+    CategoryId | typeof INACTIVE_MATRIX_FILTER_CATEGORY
+  >(() => matrixCategory ?? INACTIVE_MATRIX_FILTER_CATEGORY);
+  const categoryScopedMatrixFilters = useMemo(
+    () => (matrixFilterCategory === matrixCategory ? matrixFilters : {}),
+    [matrixCategory, matrixFilterCategory, matrixFilters],
+  );
 
   const categoryMatrixState = useMemo<CategoryMatrixState>(() => {
     if (matrixCategory === null) {
@@ -212,13 +231,24 @@ export default function BrowsePage() {
     (filterType: keyof SelectedFilters, values: string[] | boolean) => {
       switch (filterType) {
         case "category": {
+          const nextCategories = values as CategoryId[];
+          const nextMatrixCategory =
+            nextCategories.length === 1 && nextCategories[0] !== "other"
+              ? nextCategories[0]
+              : null;
           const params = new URLSearchParams(latestParamsRef.current);
           params.delete("category");
-          for (const category of values as string[]) {
+          for (const category of nextCategories) {
             params.append("category", category);
           }
           latestParamsRef.current = params;
           setSearchParamsRef.current(params, { replace: true });
+          if (nextMatrixCategory !== matrixCategory) {
+            setMatrixFilterCategory(
+              nextMatrixCategory ?? INACTIVE_MATRIX_FILTER_CATEGORY,
+            );
+            setMatrixFilters({});
+          }
           break;
         }
         case "country":
@@ -232,7 +262,7 @@ export default function BrowsePage() {
           break;
       }
     },
-    [],
+    [matrixCategory],
   );
 
   const handleClearAll = useCallback(() => {
@@ -246,7 +276,21 @@ export default function BrowsePage() {
     setCountryFilters([]);
     setPricingFilters([]);
     setOpenSourceOnly(false);
+    setMatrixFilterCategory(INACTIVE_MATRIX_FILTER_CATEGORY);
+    setMatrixFilters({});
   }, []);
+
+  const handleMatrixFilterChange = useCallback(
+    (filters: MatrixFilterSelections) => {
+      if (matrixCategory === null) {
+        return;
+      }
+
+      setMatrixFilterCategory(matrixCategory);
+      setMatrixFilters(filters);
+    },
+    [matrixCategory],
+  );
 
   const filteredAlternatives = useMemo(() => {
     let result = [...alternatives];
@@ -301,6 +345,25 @@ export default function BrowsePage() {
       result = result.filter((alternative) => alternative.isOpenSource);
     }
 
+    if (
+      matrixCategory !== null &&
+      categoryMatrixState.matrix !== null &&
+      hasActiveMatrixFilters(categoryScopedMatrixFilters)
+    ) {
+      const matrixAlternativeById = new Map(
+        categoryMatrixState.matrix.data.alternatives.map(
+          (alternative) => [alternative.id, alternative] as const,
+        ),
+      );
+
+      result = result.filter((alternative) =>
+        matrixAlternativeMatchesFilters(
+          matrixAlternativeById.get(alternative.id),
+          categoryScopedMatrixFilters,
+        ),
+      );
+    }
+
     result.sort((a, b) => {
       switch (sortBy) {
         case "trustScore": {
@@ -326,6 +389,9 @@ export default function BrowsePage() {
     usVendorNameBySlug,
     searchTerm,
     selectedFilters,
+    matrixCategory,
+    categoryMatrixState,
+    categoryScopedMatrixFilters,
     sortBy,
     i18n.language,
   ]);
@@ -395,7 +461,11 @@ export default function BrowsePage() {
           filteredCount={filteredAlternatives.length}
         />
 
-        <CategoryMatrixFilterPanel state={categoryMatrixState} />
+        <CategoryMatrixFilterPanel
+          state={categoryMatrixState}
+          selectedFilters={categoryScopedMatrixFilters}
+          onFilterChange={handleMatrixFilterChange}
+        />
 
         {filteredAlternatives.length > 0 ? (
           <div className={`alt-grid${viewMode === "list" ? " list-view" : ""}`}>

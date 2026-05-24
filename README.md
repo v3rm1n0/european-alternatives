@@ -29,10 +29,11 @@ This is not about nationalism. It's about choice, transparency, and building a h
 
 - **Browse by category** — Email, Cloud Storage, Messaging, AI, Payments, and 14 more
 - **Filter by country, pricing, and open-source status** — find exactly what you need
+- **Category-specific fit filters** — refine one selected category by product-fit facts while keeping `Unverified` results visible by default
 - **Trust Score (1-10) + vetting status** — transparent scoring with reservations and confidence level
 - **Search across all alternatives** — matches names, descriptions, tags, and replaced services
 - **Grid and list views** — switch between compact overview and detailed display
-- **Shareable category and search filters** — category and search term are stored in the URL for direct linking
+- **Shareable category and search filters** — category and search term are stored in the URL; category-specific fit filters stay local to the current browse session
 - **Responsive design** — works on desktop, tablet, and mobile
 - **No tracking, no cookies** — the site itself respects the privacy it advocates for
 
