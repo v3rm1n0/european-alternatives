@@ -30,6 +30,7 @@ Catalog endpoints are read-only, return JSON, and are cached for 5 minutes (`Cac
 | ------ | ------------------------------ | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | GET    | `/api/catalog/entries`         | `status` (alternative\|us\|denied\|draft\|archived), `locale` (en\|de) | List all active entries for a given status. Default: `status=alternative`, `locale=en`.                                           |
 | GET    | `/api/catalog/entry`           | `slug`, `locale` (en\|de)                                              | Fetch a single entry by slug with full detail (reservations, signals, comparisons).                                               |
+| GET    | `/api/catalog/matrix`          | `category`, `locale` (en\|de)                                          | Fetch one category's matrix groups, criteria, options, active alternatives, and public fact states. Default: `locale=en`.         |
 | GET    | `/api/catalog/categories`      | `locale` (en\|de)                                                      | List all categories with i18n names and descriptions.                                                                             |
 | GET    | `/api/catalog/countries`       | `locale` (en\|de)                                                      | List all countries with i18n labels.                                                                                              |
 | GET    | `/api/catalog/tags`            | --                                                                     | List all tags with slugs and optional labels.                                                                                     |
@@ -45,6 +46,35 @@ Response envelope for list endpoints:
   "meta": { "count": 234, "locale": "en" }
 }
 ```
+
+### Catalog Matrix Response
+
+`GET /api/catalog/matrix?category=messaging&locale=en` returns the comparison matrix for exactly one category. `category` is required and must match an existing category ID. `locale` defaults to `en` and must be `en` or `de`.
+
+Success responses use the catalog `{ "data": ..., "meta": ... }` envelope. `meta` includes the requested `category`, resolved `locale`, `groupCount`, `criterionCount`, and `alternativeCount`.
+
+The response includes:
+
+- `data.category` with localized category metadata
+- `data.groups[]` in matrix sort order, each with nested `criteria[]` and ordered `options[]`
+- `data.alternatives[]` for active alternatives assigned to the requested category, including secondary category assignments
+- `alternatives[].facts`, keyed by criterion ID, with one fact cell for every returned criterion
+
+Fact cells use a public status and value:
+
+```json
+{
+  "status": "verified",
+  "value": true,
+  "source": {
+    "url": "https://example.com/source",
+    "title": "Source title",
+    "accessedDate": "2026-05-24"
+  }
+}
+```
+
+Missing, open, researching, rejected, or otherwise unresolved facts are returned as `{ "status": "unverified", "value": null }`. Facts that do not apply are returned as `{ "status": "not_applicable", "value": null }`. Verified facts expose public source metadata when available, but never audit quotes or raw agent/verifier output.
 
 Locale fallback: when `locale=de` and no German translation exists for a field, the English value is returned via `COALESCE(column_de, column_en)`.
 
