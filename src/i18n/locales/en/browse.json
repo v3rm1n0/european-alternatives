@@ -64,7 +64,9 @@
     "yes": "Yes",
     "no": "No",
     "unverified": "Unverified",
-    "notApplicable": "Not applicable"
+    "notApplicable": "Not applicable",
+    "source": "Source",
+    "accessedDate": "Accessed {{date}}"
   },
   "card": {
     "showMore": "Show more",

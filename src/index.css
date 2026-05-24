@@ -2096,6 +2096,17 @@ button:disabled {
   line-height: 1.45;
 }
 
+.category-matrix-fact-stack {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.category-matrix-fact-value {
+  min-width: 0;
+}
+
 .category-matrix-fact,
 .category-matrix-option {
   display: inline-flex;
@@ -2153,6 +2164,26 @@ button:disabled {
 
 .category-matrix-view-fact-cell a {
   color: var(--accent-primary);
+  overflow-wrap: anywhere;
+}
+
+.category-matrix-source {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.125rem;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.35;
+}
+
+.category-matrix-source-link {
+  width: fit-content;
+  max-width: 100%;
+  font-weight: 500;
+}
+
+.category-matrix-source-accessed {
   overflow-wrap: anywhere;
 }
 

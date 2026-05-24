@@ -4,6 +4,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import browseDe from "../src/i18n/locales/de/browse.json";
+import browseEn from "../src/i18n/locales/en/browse.json";
 import type {
   Alternative,
   Category,
@@ -100,6 +102,8 @@ vi.mock("react-i18next", () => {
     "matrixView.no": "No",
     "matrixView.unverified": "Unverified",
     "matrixView.notApplicable": "Not applicable",
+    "matrixView.source": "Source",
+    "matrixView.accessedDate": "Accessed {{date}}",
     "compare.selectedCount": "{{count}} card selected for comparison",
     "compare.open": "Compare",
     "compare.clear": "Clear comparison selection",
@@ -344,19 +348,53 @@ function readyMatrixResult(): CategoryMatrixLoadResult {
       ],
       [
         matrixAlternative("zeta-chat", "Zeta Chat", {
-          e2ee: { status: "verified", value: false },
+          e2ee: {
+            status: "verified",
+            value: false,
+            source: {
+              url: "https://zeta-chat.example/encryption-report",
+              title: "Zeta encryption report",
+              accessedDate: "2026-05-24",
+            },
+            auditQuote:
+              "Internal verification quote for Zeta encryption must stay private.",
+            raw_response: "Never show verifier raw response for Zeta.",
+          } as unknown as MatrixFact,
           hosting_region: { status: "verified", value: "global" },
           privacy_policy: {
             status: "verified",
             value: "https://zeta-chat.example/privacy",
           },
           retention_days: { status: "verified", value: 1234 },
-          export_formats: { status: "unverified", value: null },
+          export_formats: {
+            status: "unverified",
+            value: null,
+            source: {
+              url: "https://zeta-chat.example/export-formats",
+              title: "Zeta export format source",
+            },
+            auditQuote:
+              "Internal unverified export quote must not become public.",
+          } as unknown as MatrixFact,
           support_sla: { status: "verified", value: "Community support" },
         }),
         matrixAlternative("alpha-chat", "Alpha Chat", {
-          e2ee: { status: "verified", value: true },
-          hosting_region: { status: "verified", value: "eu" },
+          e2ee: {
+            status: "verified",
+            value: true,
+            source: {
+              url: "https://alpha-chat.example/security",
+            },
+          },
+          hosting_region: {
+            status: "verified",
+            value: "eu",
+            source: {
+              url: "javascript:alert(99)",
+              title: "Unsafe Alpha hosting source",
+              accessedDate: "2026-05-23",
+            },
+          },
           privacy_policy: {
             status: "verified",
             value: "javascript:alert(1)",
@@ -366,7 +404,16 @@ function readyMatrixResult(): CategoryMatrixLoadResult {
             status: "verified",
             value: ["csv", "json"],
           },
-          support_sla: { status: "not_applicable", value: null },
+          support_sla: {
+            status: "not_applicable",
+            value: null,
+            source: {
+              url: "https://alpha-chat.example/support-sla",
+              title: "Alpha support SLA source",
+            },
+            auditQuote:
+              "Internal not-applicable support quote must not become public.",
+          } as unknown as MatrixFact,
         }),
       ],
     ),
@@ -581,6 +628,67 @@ describe("browse matrix view mode", () => {
     expect(html).toContain("Unverified");
     expect(html).toContain("Not applicable");
     expect(html).not.toMatch(/needs-deeper-research|manual-human/iu);
+  });
+
+  it("renders sanitized source links for verified matrix facts without audit quote text", async () => {
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      search: "category=messaging",
+      viewMode: "matrix",
+    });
+
+    expect(html).toContain(
+      'href="https://zeta-chat.example/encryption-report"',
+    );
+    expect(html).toMatch(
+      /<a[^>]*href="https:\/\/zeta-chat\.example\/encryption-report"[^>]*target="_blank"[^>]*rel="noopener noreferrer"[^>]*>Zeta encryption report<\/a>/u,
+    );
+    expect(html).toContain("Zeta encryption report");
+    expect(html).toContain("Accessed 2026-05-24");
+    expect(html).toMatch(
+      /href="https:\/\/alpha-chat\.example\/security"[^>]*>Source<\/a>/u,
+    );
+    expect(html).not.toContain(
+      "Internal verification quote for Zeta encryption must stay private.",
+    );
+    expect(html).not.toContain("Never show verifier raw response for Zeta.");
+    expect(html).not.toContain("auditQuote");
+    expect(html).not.toContain("raw_response");
+  });
+
+  it("does not expose source affordances for unsafe, unverified, or not-applicable matrix facts", async () => {
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      search: "category=messaging",
+      viewMode: "matrix",
+    });
+
+    expect(html).not.toContain('href="javascript:alert(99)"');
+    expect(html).not.toContain("Unsafe Alpha hosting source");
+    expect(html).not.toContain("Accessed 2026-05-23");
+    expect(html).not.toContain(
+      'href="https://zeta-chat.example/export-formats"',
+    );
+    expect(html).not.toContain("Zeta export format source");
+    expect(html).not.toContain('href="https://alpha-chat.example/support-sla"');
+    expect(html).not.toContain("Alpha support SLA source");
+    expect(html).not.toContain(
+      "Internal unverified export quote must not become public.",
+    );
+    expect(html).not.toContain(
+      "Internal not-applicable support quote must not become public.",
+    );
+  });
+
+  it("defines source metadata copy in both browse locales", () => {
+    expect(browseEn.matrixView).toMatchObject({
+      source: "Source",
+      accessedDate: "Accessed {{date}}",
+    });
+    expect(browseDe.matrixView).toMatchObject({
+      source: "Quelle",
+      accessedDate: "Abgerufen am {{date}}",
+    });
   });
 
   it("falls back to the card grid when matrix mode is active but unavailable", async () => {

@@ -9,6 +9,7 @@ import type {
   MatrixCriterionOption,
   MatrixFact,
   MatrixFactValue,
+  MatrixSourceMetadata,
 } from "../types";
 
 interface CategoryMatrixViewProps {
@@ -163,7 +164,20 @@ function renderMatrixFact(
     );
   }
 
-  return renderVerifiedValue(fact.value, criterion, t, language);
+  const sourceLink = renderSourceLink(fact.source, t);
+
+  if (sourceLink === null) {
+    return renderVerifiedValue(fact.value, criterion, t, language);
+  }
+
+  return (
+    <span className="category-matrix-fact-stack">
+      <span className="category-matrix-fact-value">
+        {renderVerifiedValue(fact.value, criterion, t, language)}
+      </span>
+      {sourceLink}
+    </span>
+  );
 }
 
 function renderVerifiedValue(
@@ -242,5 +256,41 @@ function renderUrlValue(value: string): ReactNode {
     <a href={href} target="_blank" rel="noopener noreferrer">
       {value}
     </a>
+  );
+}
+
+function renderSourceLink(
+  source: MatrixSourceMetadata | undefined,
+  t: ReturnType<typeof useTranslation<"browse">>["t"],
+): ReactNode {
+  if (source === undefined) {
+    return null;
+  }
+
+  const href = sanitizeHref(source.url);
+
+  if (href === undefined) {
+    return null;
+  }
+
+  const label = source.title?.trim() || t("matrixView.source");
+
+  return (
+    <span className="category-matrix-source">
+      <a
+        className="category-matrix-source-link"
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {label}
+      </a>
+      {source.accessedDate !== undefined &&
+        source.accessedDate.trim() !== "" && (
+          <span className="category-matrix-source-accessed">
+            {t("matrixView.accessedDate", { date: source.accessedDate })}
+          </span>
+        )}
+    </span>
   );
 }
