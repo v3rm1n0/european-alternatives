@@ -118,7 +118,7 @@ function trackRows(string $table, int $count): void
 // ── Table definitions ───────────────────────────────────────────────────────
 
 /**
- * All 15 tables in reverse FK-dependency order for DELETE.
+ * All import-managed tables in reverse FK-dependency order for DELETE.
  * Child tables first, parent tables last.
  */
 const DELETE_ORDER = [
@@ -132,9 +132,15 @@ const DELETE_ORDER = [
     'entry_replacements',
     'category_us_vendors',
     'entry_tags',
+    'matrix_fact_verifications',
+    'matrix_fact_attempts',
+    'matrix_facts',
     'entry_categories',
     'catalog_entries',
     'tags',
+    'matrix_criterion_options',
+    'matrix_criteria',
+    'matrix_criterion_groups',
     'categories',
     'countries',
 ];
@@ -208,7 +214,408 @@ function importCategories(PDO $pdo, array $categories): void
 }
 
 /**
- * Step 3: Import tags.
+ * Build a lookup key for category-scoped matrix records.
+ */
+function matrixScopedLookupKey(string $categoryId, string $sourceKey): string
+{
+    return $categoryId . '|' . $sourceKey;
+}
+
+/**
+ * Build a lookup key for one entry/category/criterion matrix fact.
+ */
+function matrixFactLookupKey(string $entrySlug, string $categoryId, string $criterionKey): string
+{
+    return $entrySlug . '|' . $categoryId . '|' . $criterionKey;
+}
+
+/**
+ * Normalize nullable booleans for MySQL TINYINT(1) columns.
+ */
+function boolColumnValue(mixed $value): ?int
+{
+    if ($value === null) {
+        return null;
+    }
+
+    return $value ? 1 : 0;
+}
+
+/**
+ * Resolve a matrix fact reference from either a stable source id or natural keys.
+ */
+function resolveMatrixFactId(array $row, array $factIdMap): ?int
+{
+    if (isset($row['fact_source_id']) && $row['fact_source_id'] !== null) {
+        return $factIdMap[(string) $row['fact_source_id']] ?? null;
+    }
+
+    if (isset($row['entry_slug'], $row['category_id'], $row['criterion_key'])) {
+        $lookupKey = matrixFactLookupKey(
+            (string) $row['entry_slug'],
+            (string) $row['category_id'],
+            (string) $row['criterion_key']
+        );
+
+        return $factIdMap[$lookupKey] ?? null;
+    }
+
+    return null;
+}
+
+/**
+ * Step 3a: Import matrix_criterion_groups.
+ * Returns a (category_id, group_key)->id lookup map.
+ */
+function importMatrixCriterionGroups(PDO $pdo, array $groups): array
+{
+    stderr('Importing matrix_criterion_groups...');
+    $stmt = $pdo->prepare(
+        'INSERT INTO `matrix_criterion_groups` (
+            `category_id`, `group_key`, `label_en`, `label_de`,
+            `description_en`, `description_de`, `sort_order`
+        ) VALUES (
+            :category_id, :group_key, :label_en, :label_de,
+            :description_en, :description_de, :sort_order
+        )'
+    );
+
+    $groupIdMap = [];
+    $count = 0;
+
+    foreach ($groups as $idx => $row) {
+        $stmt->execute([
+            ':category_id'    => $row['category_id'],
+            ':group_key'      => $row['group_key'],
+            ':label_en'       => $row['label_en'],
+            ':label_de'       => $row['label_de'],
+            ':description_en' => $row['description_en'] ?? null,
+            ':description_de' => $row['description_de'] ?? null,
+            ':sort_order'     => $row['sort_order'] ?? $idx,
+        ]);
+
+        $groupIdMap[matrixScopedLookupKey((string) $row['category_id'], (string) $row['group_key'])] = (int) $pdo->lastInsertId();
+        $count++;
+    }
+
+    trackRows('matrix_criterion_groups', $count);
+    stderr("  matrix_criterion_groups: {$count} rows");
+
+    return $groupIdMap;
+}
+
+/**
+ * Step 3b: Import matrix_criteria.
+ * Returns a (category_id, criterion_key)->id lookup map.
+ */
+function importMatrixCriteria(PDO $pdo, array $criteria, array $groupIdMap): array
+{
+    stderr('Importing matrix_criteria...');
+    $stmt = $pdo->prepare(
+        'INSERT INTO `matrix_criteria` (
+            `category_id`, `group_id`, `criterion_key`, `label_en`, `label_de`,
+            `help_text_en`, `help_text_de`, `value_type`, `semantics`,
+            `filter_mode`, `sort_order`
+        ) VALUES (
+            :category_id, :group_id, :criterion_key, :label_en, :label_de,
+            :help_text_en, :help_text_de, :value_type, :semantics,
+            :filter_mode, :sort_order
+        )'
+    );
+
+    $criterionIdMap = [];
+    $count = 0;
+
+    foreach ($criteria as $idx => $row) {
+        $groupLookupKey = matrixScopedLookupKey((string) $row['category_id'], (string) $row['group_key']);
+        $groupId = $groupIdMap[$groupLookupKey] ?? null;
+        if ($groupId === null) {
+            stderr("  WARNING: matrix_criteria references unknown group: {$row['category_id']} / {$row['group_key']}");
+            continue;
+        }
+
+        $stmt->execute([
+            ':category_id'   => $row['category_id'],
+            ':group_id'      => $groupId,
+            ':criterion_key' => $row['criterion_key'],
+            ':label_en'      => $row['label_en'],
+            ':label_de'      => $row['label_de'],
+            ':help_text_en'  => $row['help_text_en'] ?? null,
+            ':help_text_de'  => $row['help_text_de'] ?? null,
+            ':value_type'    => $row['value_type'],
+            ':semantics'     => $row['semantics'] ?? 'neutral',
+            ':filter_mode'   => $row['filter_mode'] ?? 'none',
+            ':sort_order'    => $row['sort_order'] ?? $idx,
+        ]);
+
+        $criterionIdMap[matrixScopedLookupKey((string) $row['category_id'], (string) $row['criterion_key'])] = (int) $pdo->lastInsertId();
+        $count++;
+    }
+
+    trackRows('matrix_criteria', $count);
+    stderr("  matrix_criteria: {$count} rows");
+
+    return $criterionIdMap;
+}
+
+/**
+ * Step 3c: Import matrix_criterion_options.
+ */
+function importMatrixCriterionOptions(PDO $pdo, array $options, array $criterionIdMap): void
+{
+    stderr('Importing matrix_criterion_options...');
+    $stmt = $pdo->prepare(
+        'INSERT INTO `matrix_criterion_options` (
+            `criterion_id`, `option_key`, `label_en`, `label_de`,
+            `display_tone`, `sort_order`
+        ) VALUES (
+            :criterion_id, :option_key, :label_en, :label_de,
+            :display_tone, :sort_order
+        )'
+    );
+
+    $count = 0;
+    foreach ($options as $idx => $row) {
+        $criterionLookupKey = matrixScopedLookupKey((string) $row['category_id'], (string) $row['criterion_key']);
+        $criterionId = $criterionIdMap[$criterionLookupKey] ?? null;
+        if ($criterionId === null) {
+            stderr("  WARNING: matrix_criterion_options references unknown criterion: {$row['category_id']} / {$row['criterion_key']}");
+            continue;
+        }
+
+        $stmt->execute([
+            ':criterion_id' => $criterionId,
+            ':option_key'   => $row['option_key'],
+            ':label_en'     => $row['label_en'],
+            ':label_de'     => $row['label_de'],
+            ':display_tone' => $row['display_tone'] ?? null,
+            ':sort_order'   => $row['sort_order'] ?? $idx,
+        ]);
+        $count++;
+    }
+
+    trackRows('matrix_criterion_options', $count);
+    stderr("  matrix_criterion_options: {$count} rows");
+}
+
+/**
+ * Step 6a: Import matrix_facts.
+ * Returns fact lookup maps and selected attempt references to resolve later.
+ */
+function importMatrixFacts(PDO $pdo, array $facts, array $slugToId, array $criterionIdMap): array
+{
+    stderr('Importing matrix_facts...');
+    $stmt = $pdo->prepare(
+        'INSERT INTO `matrix_facts` (
+            `entry_id`, `category_id`, `criterion_id`, `status`,
+            `value_bool`, `value_number`, `value_text`, `value_json`,
+            `public_source_url`, `public_source_title`,
+            `public_source_accessed_date`, `selected_attempt_id`
+        ) VALUES (
+            :entry_id, :category_id, :criterion_id, :status,
+            :value_bool, :value_number, :value_text, :value_json,
+            :public_source_url, :public_source_title,
+            :public_source_accessed_date, NULL
+        )'
+    );
+
+    $factIdMap = [];
+    $pendingSelectedAttempts = [];
+    $count = 0;
+
+    foreach ($facts as $row) {
+        $entryId = $slugToId[$row['entry_slug']] ?? null;
+        if ($entryId === null) {
+            stderr("  WARNING: matrix_facts references unknown entry slug: {$row['entry_slug']}");
+            continue;
+        }
+
+        $criterionLookupKey = matrixScopedLookupKey((string) $row['category_id'], (string) $row['criterion_key']);
+        $criterionId = $criterionIdMap[$criterionLookupKey] ?? null;
+        if ($criterionId === null) {
+            stderr("  WARNING: matrix_facts references unknown criterion: {$row['category_id']} / {$row['criterion_key']}");
+            continue;
+        }
+
+        $stmt->execute([
+            ':entry_id'                     => $entryId,
+            ':category_id'                  => $row['category_id'],
+            ':criterion_id'                 => $criterionId,
+            ':status'                       => $row['status'] ?? 'open',
+            ':value_bool'                   => boolColumnValue($row['value_bool'] ?? null),
+            ':value_number'                 => $row['value_number'] ?? null,
+            ':value_text'                   => $row['value_text'] ?? null,
+            ':value_json'                   => jsonColumnValue($row['value_json'] ?? null),
+            ':public_source_url'            => $row['public_source_url'] ?? null,
+            ':public_source_title'          => $row['public_source_title'] ?? null,
+            ':public_source_accessed_date'  => $row['public_source_accessed_date'] ?? null,
+        ]);
+
+        $factId = (int) $pdo->lastInsertId();
+        $naturalKey = matrixFactLookupKey((string) $row['entry_slug'], (string) $row['category_id'], (string) $row['criterion_key']);
+        $factIdMap[$naturalKey] = $factId;
+
+        if (isset($row['source_id']) && $row['source_id'] !== null) {
+            $factIdMap[(string) $row['source_id']] = $factId;
+        }
+
+        if (isset($row['selected_attempt_source_id']) && $row['selected_attempt_source_id'] !== null) {
+            $pendingSelectedAttempts[] = [
+                'fact_id' => $factId,
+                'attempt_source_id' => (string) $row['selected_attempt_source_id'],
+            ];
+        }
+
+        $count++;
+    }
+
+    trackRows('matrix_facts', $count);
+    stderr("  matrix_facts: {$count} rows");
+
+    return [
+        'fact_id_map' => $factIdMap,
+        'pending_selected_attempts' => $pendingSelectedAttempts,
+    ];
+}
+
+/**
+ * Step 6b: Import matrix_fact_attempts.
+ * Returns an attempt source_id->id lookup map.
+ */
+function importMatrixFactAttempts(PDO $pdo, array $attempts, array $factIdMap): array
+{
+    stderr('Importing matrix_fact_attempts...');
+    $stmt = $pdo->prepare(
+        'INSERT INTO `matrix_fact_attempts` (
+            `fact_id`, `agent`, `model`, `command`, `proposed_status`,
+            `proposed_value_bool`, `proposed_value_number`, `proposed_value_text`,
+            `proposed_value_json`, `source_url`, `source_title`, `accessed_date`,
+            `audit_quote`, `raw_response`, `status`
+        ) VALUES (
+            :fact_id, :agent, :model, :command, :proposed_status,
+            :proposed_value_bool, :proposed_value_number, :proposed_value_text,
+            :proposed_value_json, :source_url, :source_title, :accessed_date,
+            :audit_quote, :raw_response, :status
+        )'
+    );
+
+    $attemptIdMap = [];
+    $count = 0;
+
+    foreach ($attempts as $idx => $row) {
+        $factId = resolveMatrixFactId($row, $factIdMap);
+        if ($factId === null) {
+            $factRef = $row['fact_source_id'] ?? ($row['entry_slug'] ?? '(missing)');
+            stderr("  WARNING: matrix_fact_attempts references unknown fact: {$factRef}");
+            continue;
+        }
+
+        $stmt->execute([
+            ':fact_id'                => $factId,
+            ':agent'                  => $row['agent'],
+            ':model'                  => $row['model'] ?? null,
+            ':command'                => $row['command'] ?? null,
+            ':proposed_status'        => $row['proposed_status'] ?? null,
+            ':proposed_value_bool'    => boolColumnValue($row['proposed_value_bool'] ?? null),
+            ':proposed_value_number'  => $row['proposed_value_number'] ?? null,
+            ':proposed_value_text'    => $row['proposed_value_text'] ?? null,
+            ':proposed_value_json'    => jsonColumnValue($row['proposed_value_json'] ?? null),
+            ':source_url'             => $row['source_url'] ?? null,
+            ':source_title'           => $row['source_title'] ?? null,
+            ':accessed_date'          => $row['accessed_date'] ?? null,
+            ':audit_quote'            => $row['audit_quote'] ?? null,
+            ':raw_response'           => $row['raw_response'] ?? null,
+            ':status'                 => $row['status'] ?? 'proposed',
+        ]);
+
+        $sourceKey = (string) ($row['source_id'] ?? $idx);
+        $attemptIdMap[$sourceKey] = (int) $pdo->lastInsertId();
+        $count++;
+    }
+
+    trackRows('matrix_fact_attempts', $count);
+    stderr("  matrix_fact_attempts: {$count} rows");
+
+    return $attemptIdMap;
+}
+
+/**
+ * Step 6c: Import matrix_fact_verifications.
+ */
+function importMatrixFactVerifications(PDO $pdo, array $verifications, array $attemptIdMap): void
+{
+    stderr('Importing matrix_fact_verifications...');
+    $stmt = $pdo->prepare(
+        'INSERT INTO `matrix_fact_verifications` (
+            `attempt_id`, `verifier_index`, `agent`, `source_url`, `source_title`,
+            `accessed_date`, `audit_quote`, `verdict`, `notes`, `raw_response`
+        ) VALUES (
+            :attempt_id, :verifier_index, :agent, :source_url, :source_title,
+            :accessed_date, :audit_quote, :verdict, :notes, :raw_response
+        )'
+    );
+
+    $count = 0;
+    foreach ($verifications as $idx => $row) {
+        $attemptSourceId = (string) ($row['attempt_source_id'] ?? '');
+        $attemptId = $attemptIdMap[$attemptSourceId] ?? null;
+        if ($attemptId === null) {
+            stderr("  WARNING: matrix_fact_verifications references unknown attempt source_id: {$attemptSourceId}");
+            continue;
+        }
+
+        $stmt->execute([
+            ':attempt_id'     => $attemptId,
+            ':verifier_index' => $row['verifier_index'] ?? ($idx + 1),
+            ':agent'          => $row['agent'],
+            ':source_url'     => $row['source_url'] ?? null,
+            ':source_title'   => $row['source_title'] ?? null,
+            ':accessed_date'  => $row['accessed_date'] ?? null,
+            ':audit_quote'    => $row['audit_quote'] ?? null,
+            ':verdict'        => $row['verdict'],
+            ':notes'          => $row['notes'] ?? null,
+            ':raw_response'   => $row['raw_response'] ?? null,
+        ]);
+        $count++;
+    }
+
+    trackRows('matrix_fact_verifications', $count);
+    stderr("  matrix_fact_verifications: {$count} rows");
+}
+
+/**
+ * Step 6d: Resolve matrix_facts.selected_attempt_id after attempts exist.
+ */
+function updateMatrixFactSelectedAttempts(PDO $pdo, array $pendingSelectedAttempts, array $attemptIdMap): void
+{
+    stderr('Resolving selected matrix fact attempts...');
+    $stmt = $pdo->prepare(
+        'UPDATE `matrix_facts`
+         SET `selected_attempt_id` = :selected_attempt_id
+         WHERE `id` = :fact_id'
+    );
+
+    $count = 0;
+    foreach ($pendingSelectedAttempts as $pendingSelection) {
+        $attemptSourceId = $pendingSelection['attempt_source_id'];
+        $attemptId = $attemptIdMap[$attemptSourceId] ?? null;
+        if ($attemptId === null) {
+            stderr("  WARNING: matrix_facts selected_attempt_source_id references unknown attempt: {$attemptSourceId}");
+            continue;
+        }
+
+        $stmt->execute([
+            ':selected_attempt_id' => $attemptId,
+            ':fact_id'             => $pendingSelection['fact_id'],
+        ]);
+        $count += $stmt->rowCount();
+    }
+
+    stderr("  matrix_facts selected_attempt_id updates: {$count} rows");
+}
+
+/**
+ * Step 4: Import tags.
  */
 function importTags(PDO $pdo, array $tags): void
 {
@@ -747,38 +1154,49 @@ try {
     // ── Step 2: categories ──────────────────────────────────────────────
     importCategories($pdo, $data['categories'] ?? []);
 
-    // ── Step 3: tags ────────────────────────────────────────────────────
+    // ── Step 3: matrix criterion metadata ───────────────────────────────
+    $matrixGroupIdMap = importMatrixCriterionGroups($pdo, $data['matrix_criterion_groups'] ?? []);
+    $matrixCriterionIdMap = importMatrixCriteria($pdo, $data['matrix_criteria'] ?? [], $matrixGroupIdMap);
+    importMatrixCriterionOptions($pdo, $data['matrix_criterion_options'] ?? [], $matrixCriterionIdMap);
+
+    // ── Step 4: tags ────────────────────────────────────────────────────
     importTags($pdo, $data['tags'] ?? []);
 
-    // ── Step 4: catalog_entries ─────────────────────────────────────────
+    // ── Step 5: catalog_entries ─────────────────────────────────────────
     $slugToId = importCatalogEntries($pdo, $data['catalog_entries'] ?? []);
 
-    // ── Step 5: entry_categories + entry_tags ───────────────────────────
+    // ── Step 6: entry_categories + entry_tags ───────────────────────────
     importEntryCategories($pdo, $data['entry_categories'] ?? [], $slugToId);
     importEntryTags($pdo, $data['entry_tags'] ?? [], $slugToId);
 
-    // ── Step 6: category_us_vendors ─────────────────────────────────────
+    // ── Step 7: matrix facts, attempts, and verifications ───────────────
+    $matrixFactImport = importMatrixFacts($pdo, $data['matrix_facts'] ?? [], $slugToId, $matrixCriterionIdMap);
+    $matrixAttemptIdMap = importMatrixFactAttempts($pdo, $data['matrix_fact_attempts'] ?? [], $matrixFactImport['fact_id_map']);
+    importMatrixFactVerifications($pdo, $data['matrix_fact_verifications'] ?? [], $matrixAttemptIdMap);
+    updateMatrixFactSelectedAttempts($pdo, $matrixFactImport['pending_selected_attempts'], $matrixAttemptIdMap);
+
+    // ── Step 8: category_us_vendors ─────────────────────────────────────
     importCategoryUsVendors($pdo, $data['category_us_vendors'] ?? [], $slugToId);
 
-    // ── Step 7: entry_replacements ──────────────────────────────────────
+    // ── Step 9: entry_replacements ──────────────────────────────────────
     importEntryReplacements($pdo, $data['entry_replacements'] ?? [], $slugToId);
 
-    // ── Step 8: reservations ────────────────────────────────────────────
+    // ── Step 10: reservations ───────────────────────────────────────────
     importReservations($pdo, $data['reservations'] ?? [], $slugToId);
 
-    // ── Step 9: positive_signals ────────────────────────────────────────
+    // ── Step 11: positive_signals ───────────────────────────────────────
     importPositiveSignals($pdo, $data['positive_signals'] ?? [], $slugToId);
 
-    // ── Step 10: scoring_metadata ──────────────────────────────────────
+    // ── Step 12: scoring_metadata ───────────────────────────────────────
     importScoringMetadata($pdo, $data['scoring_metadata'] ?? [], $slugToId);
 
-    // ── Step 11: denied_decisions ──────────────────────────────────────
+    // ── Step 13: denied_decisions ───────────────────────────────────────
     importDeniedDecisions($pdo, $data['denied_decisions'] ?? [], $slugToId);
 
-    // ── Step 12: further_reading_resources ─────────────────────────────
+    // ── Step 14: further_reading_resources ──────────────────────────────
     importFurtherReadingResources($pdo, $data['further_reading_resources'] ?? []);
 
-    // ── Step 13: landing_category_groups + landing_group_categories ─
+    // ── Step 15: landing_category_groups + landing_group_categories ─────
     $groupIdMap = importLandingCategoryGroups($pdo, $data['landing_category_groups'] ?? []);
     importLandingGroupCategories($pdo, $data['landing_group_categories'] ?? [], $groupIdMap);
 

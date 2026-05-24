@@ -14,11 +14,11 @@ Developer reference for the PHP read API and MySQL database.
 
 ### npm Scripts
 
-| npm script | Command | Description |
-|---|---|---|
-| `db:import` | `php scripts/db-import.php --source tmp/export/catalog.json` | Seed all 16 MySQL tables from exported JSON (single transaction) |
-| `db:backup` | `bash scripts/db-backup.sh` | Backup the database |
-| `db:restore` | `bash scripts/db-restore.sh` | Restore a database backup |
+| npm script   | Command                                                      | Description                                                                  |
+| ------------ | ------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| `db:import`  | `php scripts/db-import.php --source tmp/export/catalog.json` | Seed catalog and matrix MySQL tables from exported JSON (single transaction) |
+| `db:backup`  | `bash scripts/db-backup.sh`                                  | Backup the database                                                          |
+| `db:restore` | `bash scripts/db-restore.sh`                                 | Restore a database backup                                                    |
 
 ---
 
@@ -26,16 +26,16 @@ Developer reference for the PHP read API and MySQL database.
 
 Catalog endpoints are read-only, return JSON, and are cached for 5 minutes (`Cache-Control: public, max-age=300`). Operational health endpoints are uncached and may require authentication.
 
-| Method | URL | Query Params | Description |
-|---|---|---|---|
-| GET | `/api/catalog/entries` | `status` (alternative\|us\|denied\|draft\|archived), `locale` (en\|de) | List all active entries for a given status. Default: `status=alternative`, `locale=en`. |
-| GET | `/api/catalog/entry` | `slug`, `locale` (en\|de) | Fetch a single entry by slug with full detail (reservations, signals, comparisons). |
-| GET | `/api/catalog/categories` | `locale` (en\|de) | List all categories with i18n names and descriptions. |
-| GET | `/api/catalog/countries` | `locale` (en\|de) | List all countries with i18n labels. |
-| GET | `/api/catalog/tags` | -- | List all tags with slugs and optional labels. |
-| GET | `/api/catalog/further-reading` | -- | List curated further-reading resources. |
-| GET | `/api/catalog/landing-groups` | `locale` (en\|de) | Landing page category groups with nested category IDs. |
-| GET | `/api/health/db` | -- | Operational database readiness check (no caching, requires admin Bearer token, includes transport probe metadata when available). |
+| Method | URL                            | Query Params                                                           | Description                                                                                                                       |
+| ------ | ------------------------------ | ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/catalog/entries`         | `status` (alternative\|us\|denied\|draft\|archived), `locale` (en\|de) | List all active entries for a given status. Default: `status=alternative`, `locale=en`.                                           |
+| GET    | `/api/catalog/entry`           | `slug`, `locale` (en\|de)                                              | Fetch a single entry by slug with full detail (reservations, signals, comparisons).                                               |
+| GET    | `/api/catalog/categories`      | `locale` (en\|de)                                                      | List all categories with i18n names and descriptions.                                                                             |
+| GET    | `/api/catalog/countries`       | `locale` (en\|de)                                                      | List all countries with i18n labels.                                                                                              |
+| GET    | `/api/catalog/tags`            | --                                                                     | List all tags with slugs and optional labels.                                                                                     |
+| GET    | `/api/catalog/further-reading` | --                                                                     | List curated further-reading resources.                                                                                           |
+| GET    | `/api/catalog/landing-groups`  | `locale` (en\|de)                                                      | Landing page category groups with nested category IDs.                                                                            |
+| GET    | `/api/health/db`               | --                                                                     | Operational database readiness check (no caching, requires admin Bearer token, includes transport probe metadata when available). |
 
 Response envelope for list endpoints:
 
@@ -52,50 +52,61 @@ Locale fallback: when `locale=de` and no German translation exists for a field, 
 
 ## Database Schema
 
-16 tables on MySQL 8.0+ (InnoDB, utf8mb4_unicode_ci). Full DDL in `scripts/db-schema.sql`.
+23 tables on MySQL 8.0+ (InnoDB, utf8mb4_unicode_ci). Full DDL in `scripts/db-schema.sql`.
 
 ### Core Entities
 
-| Table | PK | Purpose |
-|---|---|---|
-| `catalog_entries` | Auto ID, unique `slug` | Unified entity table for alternatives, US vendors, denied entries, drafts |
-| `categories` | Slug ID | Category definitions with emoji, i18n name/description |
-| `countries` | ISO alpha-2 code | Country lookup with i18n labels |
-| `tags` | Auto ID, unique `slug` | Normalized tag slugs |
-| `schema_migrations` | Version string | Tracks applied schema versions |
+| Table               | PK                     | Purpose                                                                   |
+| ------------------- | ---------------------- | ------------------------------------------------------------------------- |
+| `catalog_entries`   | Auto ID, unique `slug` | Unified entity table for alternatives, US vendors, denied entries, drafts |
+| `categories`        | Slug ID                | Category definitions with emoji, i18n name/description                    |
+| `countries`         | ISO alpha-2 code       | Country lookup with i18n labels                                           |
+| `tags`              | Auto ID, unique `slug` | Normalized tag slugs                                                      |
+| `schema_migrations` | Version string         | Tracks applied schema versions                                            |
 
 ### Relationships
 
-| Table | Purpose |
-|---|---|
-| `entry_categories` | M:N entries-to-categories (with `is_primary` flag) |
-| `entry_tags` | M:N entries-to-tags (ordered) |
+| Table                | Purpose                                                                         |
+| -------------------- | ------------------------------------------------------------------------------- |
+| `entry_categories`   | M:N entries-to-categories (with `is_primary` flag)                              |
+| `entry_tags`         | M:N entries-to-tags (ordered)                                                   |
 | `entry_replacements` | Which US vendors an alternative replaces (ordered, with optional FK resolution) |
+
+### Matrix Criteria & Facts
+
+| Table                       | Purpose                                                                                  |
+| --------------------------- | ---------------------------------------------------------------------------------------- |
+| `matrix_criterion_groups`   | Category-owned groups for comparison matrix rows                                         |
+| `matrix_criteria`           | Category-specific matrix criteria, value types, filter modes, and sort order             |
+| `matrix_criterion_options`  | Allowed enum or multi-enum options for matrix criteria                                   |
+| `matrix_facts`              | Current public fact value per entry and criterion, with public source metadata           |
+| `matrix_fact_attempts`      | Audit trail of research attempts, proposed values, audit quotes, and raw model responses |
+| `matrix_fact_verifications` | Independent audit verification records for research attempts                             |
 
 ### Display & Mapping
 
-| Table | Purpose |
-|---|---|
+| Table                 | Purpose                                       |
+| --------------------- | --------------------------------------------- |
 | `category_us_vendors` | Per-category "Replaces X, Y, Z" display order |
 
 ### Trust & Scoring
 
-| Table | Purpose |
-|---|---|
-| `reservations` | Trust penalty evidence per entry (severity, penalty tier/amount, i18n text) |
-| `positive_signals` | Trust-positive evidence per entry (dimension, amount, i18n text) |
-| `scoring_metadata` | Per-entry scoring config (base class override, ad-surveillance flag) |
+| Table              | Purpose                                                                     |
+| ------------------ | --------------------------------------------------------------------------- |
+| `reservations`     | Trust penalty evidence per entry (severity, penalty tier/amount, i18n text) |
+| `positive_signals` | Trust-positive evidence per entry (dimension, amount, i18n text)            |
+| `scoring_metadata` | Per-entry scoring config (base class override, ad-surveillance flag)        |
 
 Trust scores are dynamically computed on every API request by `api/catalog/scoring.php` from reservations, positive signals, and scoring metadata. No scores are stored in the database.
 
 ### Editorial & Landing
 
-| Table | Purpose |
-|---|---|
-| `denied_decisions` | Denial reasoning for rejected alternatives (failed gateways, sources) |
-| `further_reading_resources` | Curated external resource links |
-| `landing_category_groups` | Groups for landing page display |
-| `landing_group_categories` | M:N landing groups-to-categories |
+| Table                       | Purpose                                                               |
+| --------------------------- | --------------------------------------------------------------------- |
+| `denied_decisions`          | Denial reasoning for rejected alternatives (failed gateways, sources) |
+| `further_reading_resources` | Curated external resource links                                       |
+| `landing_category_groups`   | Groups for landing page display                                       |
+| `landing_group_categories`  | M:N landing groups-to-categories                                      |
 
 ### Key Constraints
 
@@ -107,12 +118,12 @@ Trust scores are dynamically computed on every API request by `api/catalog/scori
 
 ## Scripts Reference
 
-| Script | Language | Purpose |
-|---|---|---|
-| `scripts/db-schema.sql` | SQL | Full DDL for all 16 tables (run via `mysql` CLI) |
-| `scripts/db-import.php` | PHP | Read `catalog.json`, seed all 16 tables in a single transaction with advisory lock |
-| `scripts/db-backup.sh` | Bash | Backup the MySQL database |
-| `scripts/db-restore.sh` | Bash | Restore a database backup |
+| Script                  | Language | Purpose                                                                                        |
+| ----------------------- | -------- | ---------------------------------------------------------------------------------------------- |
+| `scripts/db-schema.sql` | SQL      | Full DDL for all 23 tables (run via `mysql` CLI)                                               |
+| `scripts/db-import.php` | PHP      | Read `catalog.json`, seed catalog and matrix tables in a single transaction with advisory lock |
+| `scripts/db-backup.sh`  | Bash     | Backup the MySQL database                                                                      |
+| `scripts/db-restore.sh` | Bash     | Restore a database backup                                                                      |
 
 ---
 
