@@ -5,7 +5,7 @@
 -- Date:             2026-02-27
 -- Engine:           MySQL 8.0+ (InnoDB)
 -- Charset:          utf8mb4 / utf8mb4_unicode_ci
--- Tables:           17
+-- Tables:           20
 -- Schema for European Alternatives database
 --
 -- This schema creates the full normalized catalog database for the European
@@ -20,7 +20,8 @@
 --     further_reading_resources, denied_decisions, scoring_metadata,
 --     positive_signals, reservations, us_vendor_aliases, entry_replacements,
 --     category_us_vendors, entry_tags, entry_categories, catalog_entries,
---     tags, categories, countries, schema_migrations;
+--     tags, matrix_criterion_options, matrix_criteria,
+--     matrix_criterion_groups, categories, countries, schema_migrations;
 -- =============================================================================
 
 SET NAMES utf8mb4;
@@ -61,7 +62,74 @@ CREATE TABLE `categories` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
--- 4. tags — normalized tag slugs with optional i18n labels
+-- 4. matrix_criterion_groups — category-owned matrix criterion groups
+--    Depends on: categories
+-- ---------------------------------------------------------------------------
+-- Matrix criterion groups are scoped to one category.
+CREATE TABLE `matrix_criterion_groups` (
+  `id`             BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `category_id`    VARCHAR(50)     NOT NULL,
+  `group_key`      VARCHAR(100)    NOT NULL,
+  `label_en`       VARCHAR(200)    NOT NULL,
+  `label_de`       VARCHAR(200)    NOT NULL,
+  `description_en` TEXT            DEFAULT NULL,
+  `description_de` TEXT            DEFAULT NULL,
+  `sort_order`     INT             NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_mcg_category_key` (`category_id`, `group_key`),
+  UNIQUE KEY `uq_mcg_category_order` (`category_id`, `sort_order`),
+  UNIQUE KEY `uq_mcg_category_id` (`category_id`, `id`),
+  CONSTRAINT `fk_mcg_category` FOREIGN KEY (`category_id`) REFERENCES `categories` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- 5. matrix_criteria — category-specific matrix rows and filters
+--    Depends on: categories, matrix_criterion_groups
+-- ---------------------------------------------------------------------------
+-- Matrix criteria define category-specific comparison rows and filters.
+CREATE TABLE `matrix_criteria` (
+  `id`            BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `category_id`   VARCHAR(50)     NOT NULL,
+  `group_id`      BIGINT UNSIGNED NOT NULL,
+  `criterion_key` VARCHAR(100)    NOT NULL,
+  `label_en`      VARCHAR(200)    NOT NULL,
+  `label_de`      VARCHAR(200)    NOT NULL,
+  `help_text_en`  TEXT            DEFAULT NULL,
+  `help_text_de`  TEXT            DEFAULT NULL,
+  `value_type`    ENUM('boolean','enum','multi_enum','number','text','url','date') NOT NULL,
+  `semantics`     ENUM('beneficial','harmful','neutral','tradeoff','informational','risk') NOT NULL DEFAULT 'neutral',
+  `filter_mode`   ENUM('none','optional','must_match','range','multi_select') NOT NULL DEFAULT 'none',
+  `sort_order`    INT             NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_mc_category_key` (`category_id`, `criterion_key`),
+  UNIQUE KEY `uq_mc_category_order` (`category_id`, `sort_order`),
+  KEY `ix_mc_group_category` (`category_id`, `group_id`),
+  CONSTRAINT `fk_mc_category` FOREIGN KEY (`category_id`) REFERENCES `categories` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_mc_group_category` FOREIGN KEY (`category_id`, `group_id`)
+    REFERENCES `matrix_criterion_groups` (`category_id`, `id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- 6. matrix_criterion_options — allowed options for enum matrix criteria
+--    Depends on: matrix_criteria
+-- ---------------------------------------------------------------------------
+-- Matrix criterion options are scoped to one enum or multi-enum criterion.
+CREATE TABLE `matrix_criterion_options` (
+  `id`           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `criterion_id` BIGINT UNSIGNED NOT NULL,
+  `option_key`   VARCHAR(100)    NOT NULL,
+  `label_en`     VARCHAR(200)    NOT NULL,
+  `label_de`     VARCHAR(200)    NOT NULL,
+  `display_tone` ENUM('positive','warning','negative','neutral','tradeoff') DEFAULT NULL,
+  `sort_order`   INT             NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_mco_criterion_key` (`criterion_id`, `option_key`),
+  UNIQUE KEY `uq_mco_criterion_order` (`criterion_id`, `sort_order`),
+  CONSTRAINT `fk_mco_criterion` FOREIGN KEY (`criterion_id`) REFERENCES `matrix_criteria` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------------------------------------------------------------------------
+-- 7. tags — normalized tag slugs with optional i18n labels
 -- ---------------------------------------------------------------------------
 CREATE TABLE `tags` (
   `id`       BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -73,7 +141,7 @@ CREATE TABLE `tags` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
--- 5. catalog_entries — unified entity table (alternatives, US, denied, etc.)
+-- 8. catalog_entries — unified entity table (alternatives, US, denied, etc.)
 --    Depends on: countries
 -- ---------------------------------------------------------------------------
 CREATE TABLE `catalog_entries` (
@@ -116,7 +184,7 @@ CREATE TABLE `catalog_entries` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
--- 6. entry_categories — many-to-many: entries <-> categories
+-- 9. entry_categories — many-to-many: entries <-> categories
 --    Depends on: catalog_entries, categories
 --    Uses a generated column + unique index to enforce at-most-one primary
 --    category per entry.
@@ -134,7 +202,7 @@ CREATE TABLE `entry_categories` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
--- 7. entry_tags — many-to-many: entries <-> tags (with display order)
+-- 10. entry_tags — many-to-many: entries <-> tags (with display order)
 --    Depends on: catalog_entries, tags
 -- ---------------------------------------------------------------------------
 CREATE TABLE `entry_tags` (
@@ -148,7 +216,7 @@ CREATE TABLE `entry_tags` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
--- 8. category_us_vendors — "Replaces X, Y, Z" per category
+-- 11. category_us_vendors — "Replaces X, Y, Z" per category
 --    Depends on: categories, catalog_entries
 -- ---------------------------------------------------------------------------
 CREATE TABLE `category_us_vendors` (
@@ -165,7 +233,7 @@ CREATE TABLE `category_us_vendors` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
--- 9. entry_replacements — which US vendors an alternative replaces
+-- 12. entry_replacements — which US vendors an alternative replaces
 --    Depends on: catalog_entries
 -- ---------------------------------------------------------------------------
 CREATE TABLE `entry_replacements` (
@@ -181,7 +249,7 @@ CREATE TABLE `entry_replacements` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
--- 10. us_vendor_aliases — maps product names / abbreviations to US vendor entries
+-- 13. us_vendor_aliases — maps product names / abbreviations to US vendor entries
 --     Depends on: catalog_entries
 --     Example: alias "Adobe Photoshop" → entry_id for "Adobe" (or vice versa)
 -- ---------------------------------------------------------------------------
@@ -195,7 +263,7 @@ CREATE TABLE `us_vendor_aliases` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
--- 11. reservations — trust reservations (penalties) for catalog entries
+-- 14. reservations — trust reservations (penalties) for catalog entries
 --     Depends on: catalog_entries
 -- ---------------------------------------------------------------------------
 CREATE TABLE `reservations` (
@@ -218,7 +286,7 @@ CREATE TABLE `reservations` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
--- 11. positive_signals — trust-positive evidence for catalog entries
+-- 15. positive_signals — trust-positive evidence for catalog entries
 --     Depends on: catalog_entries
 -- ---------------------------------------------------------------------------
 CREATE TABLE `positive_signals` (
@@ -238,7 +306,7 @@ CREATE TABLE `positive_signals` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
--- 12. scoring_metadata — per-entry scoring configuration overrides
+-- 16. scoring_metadata — per-entry scoring configuration overrides
 --     Depends on: catalog_entries
 -- ---------------------------------------------------------------------------
 CREATE TABLE `scoring_metadata` (
@@ -252,7 +320,7 @@ CREATE TABLE `scoring_metadata` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
--- 13. denied_decisions — denial reasoning for rejected alternatives
+-- 17. denied_decisions — denial reasoning for rejected alternatives
 --     Depends on: catalog_entries (status = 'denied')
 -- ---------------------------------------------------------------------------
 CREATE TABLE `denied_decisions` (
@@ -271,7 +339,7 @@ CREATE TABLE `denied_decisions` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
--- 14. further_reading_resources — curated external resource links
+-- 18. further_reading_resources — curated external resource links
 --     No FK dependencies
 -- ---------------------------------------------------------------------------
 CREATE TABLE `further_reading_resources` (
@@ -289,7 +357,7 @@ CREATE TABLE `further_reading_resources` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
--- 15. landing_category_groups — groups for landing page display
+-- 19. landing_category_groups — groups for landing page display
 --     No FK dependencies
 -- ---------------------------------------------------------------------------
 CREATE TABLE `landing_category_groups` (
@@ -305,7 +373,7 @@ CREATE TABLE `landing_category_groups` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------------------------------------------------------------------------
--- 16. landing_group_categories — many-to-many: landing groups <-> categories
+-- 20. landing_group_categories — many-to-many: landing groups <-> categories
 --     Depends on: landing_category_groups, categories
 -- ---------------------------------------------------------------------------
 CREATE TABLE `landing_group_categories` (
