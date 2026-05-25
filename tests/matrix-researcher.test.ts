@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -125,6 +124,13 @@ function validPayload(overrides: Record<string, unknown> = {}) {
 
 function parseJsonObject(stdout: string): Record<string, unknown> {
   return JSON.parse(stdout) as Record<string, unknown>;
+}
+
+function makeProjectTempDir(prefix: string): string {
+  const tempRoot = resolve("tmp");
+  mkdirSync(tempRoot, { recursive: true });
+
+  return mkdtempSync(join(tempRoot, prefix));
 }
 
 describe("matrix one-fact researcher contract", () => {
@@ -405,7 +411,7 @@ describe("matrix one-fact researcher contract", () => {
 
 describe("matrix research runner CLI", () => {
   it("uses mocked researcher output to print one parsed pending attempt without a live model call", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "matrix-researcher-"));
+    const tempDir = makeProjectTempDir("matrix-researcher-");
     const mockResponsePath = join(tempDir, "response.txt");
 
     try {
@@ -447,7 +453,7 @@ describe("matrix research runner CLI", () => {
   });
 
   it("loads mocked researcher targets from file and stdin", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "matrix-researcher-"));
+    const tempDir = makeProjectTempDir("matrix-researcher-");
     const mockResponsePath = join(tempDir, "response.txt");
     const targetPath = join(tempDir, "target.json");
 
@@ -505,7 +511,7 @@ describe("matrix research runner CLI", () => {
   });
 
   it("rejects dry-run and unclaimed selected targets before parsing a pending attempt", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "matrix-researcher-"));
+    const tempDir = makeProjectTempDir("matrix-researcher-");
     const mockResponsePath = join(tempDir, "response.txt");
     const rejectedTargets = [
       {
@@ -552,7 +558,7 @@ describe("matrix research runner CLI", () => {
   });
 
   it("rejects invalid mocked output with a non-zero exit and parser error on stderr", () => {
-    const tempDir = mkdtempSync(join(tmpdir(), "matrix-researcher-"));
+    const tempDir = makeProjectTempDir("matrix-researcher-");
     const mockResponsePath = join(tempDir, "response.txt");
 
     try {
@@ -583,6 +589,56 @@ describe("matrix research runner CLI", () => {
       expect(result.stderr).toMatch(/sourceUrl|source URL|parse/i);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects mocked outputs that answer multiple facts or omit source quotes", () => {
+    const invalidMockResponses = [
+      {
+        name: "multiple facts",
+        response: modelResponse({
+          answers: [validPayload(), validPayload({ proposedValue: false })],
+        }),
+        error: /multi|one|answers|plural|parse/i,
+      },
+      {
+        name: "missing audit quote",
+        response: modelResponse(validPayload({ auditQuote: "" })),
+        error: /auditQuote|audit quote|parse/i,
+      },
+    ];
+
+    for (const invalidMockResponse of invalidMockResponses) {
+      const tempDir = makeProjectTempDir("matrix-researcher-");
+      const mockResponsePath = join(tempDir, "response.txt");
+
+      try {
+        writeFileSync(mockResponsePath, invalidMockResponse.response, "utf8");
+
+        const result = spawnSync(
+          process.execPath,
+          [
+            researcherRunnerPath,
+            "--researcher",
+            "codex",
+            "--target-json",
+            JSON.stringify(selectedTarget),
+            "--mock-response-file",
+            mockResponsePath,
+            "--accessed-date",
+            "2026-05-25",
+          ],
+          { cwd: projectDir, encoding: "utf8" },
+        );
+
+        expect(result.status, invalidMockResponse.name).not.toBe(0);
+        expect(result.stdout, invalidMockResponse.name).toBe("");
+        expect(result.stderr, invalidMockResponse.name).toMatch(
+          invalidMockResponse.error,
+        );
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
     }
   });
 });

@@ -12,7 +12,14 @@ const stateMarker = "__SELECTOR_STATE__";
 
 let phpPromise: Promise<PHP> | undefined;
 
-type MatrixFactStatus = "open" | "researching" | "researched";
+type MatrixFactStatus =
+  | "open"
+  | "researching"
+  | "researched"
+  | "verified"
+  | "rejected"
+  | "needs-deeper-research"
+  | "not-applicable";
 
 type SelectorScenario = {
   categories: Array<{
@@ -312,6 +319,24 @@ function scenarioWithoutOpenFacts(): SelectorScenario {
   return scenario;
 }
 
+function scenarioWithOnlyNeedsDeeperResearchFact(): SelectorScenario {
+  const scenario = scenarioWithoutOpenFacts();
+  scenario.facts = scenario.facts.map((fact) =>
+    fact.id === 105 ? { ...fact, status: "needs-deeper-research" } : fact,
+  );
+
+  return scenario;
+}
+
+function scenarioWithOpenAndNeedsDeeperResearchFacts(): SelectorScenario {
+  const scenario = selectorScenario();
+  scenario.facts = scenario.facts.map((fact) =>
+    fact.id === 99 ? { ...fact, status: "needs-deeper-research" } : fact,
+  );
+
+  return scenario;
+}
+
 function buildSelectorBehaviorCode(
   args: string[],
   scenario: SelectorScenario,
@@ -503,6 +528,14 @@ function matrix_research_selector_test_rows_for_sql(
         }
 
         if (
+            str_contains($normalizedSql, 'mf.status in')
+            && str_contains($normalizedSql, "'needs-deeper-research'")
+            && !in_array($fact['status'] ?? null, ['open', 'needs-deeper-research'], true)
+        ) {
+            continue;
+        }
+
+        if (
             preg_match('/mf\\.category_id\\s*=\\s*:category\\b/', $normalizedSql) === 1
             && $fact['category_id'] !== $category
         ) {
@@ -567,9 +600,15 @@ function matrix_research_selector_test_rows_for_sql(
     }
 
     if (str_contains($normalizedSql, 'order by')) {
+        $prioritizesOpenStatus = str_contains(
+            $normalizedSql,
+            "case mf.status when 'open' then 0 else 1 end",
+        );
+
         usort(
             $rows,
             static fn (array $left, array $right): int => [
+                ($prioritizesOpenStatus && $left['fact_status'] === 'open') ? 0 : 1,
                 $left['category_sort_order'],
                 $left['category_id'],
                 $left['entry_name'],
@@ -578,6 +617,7 @@ function matrix_research_selector_test_rows_for_sql(
                 $left['criterion_id'],
                 $left['fact_id'],
             ] <=> [
+                ($prioritizesOpenStatus && $right['fact_status'] === 'open') ? 0 : 1,
                 $right['category_sort_order'],
                 $right['category_id'],
                 $right['entry_name'],
@@ -604,6 +644,9 @@ function matrix_research_selector_test_claim_fact(
     $factId = matrix_research_selector_test_param($params, ['fact_id', 'factId', 'id']);
     $filtersById = preg_match('/\\bid\\s*=\\s*:fact_id\\b/', $normalizedSql) === 1;
     $filtersOpen = preg_match('/\\bstatus\\s*=\\s*\\'open\\'/', $normalizedSql) === 1;
+    $filtersRetryable = str_contains($normalizedSql, 'status in')
+        && str_contains($normalizedSql, "'open'")
+        && str_contains($normalizedSql, "'needs-deeper-research'");
     $setsResearching = preg_match('/\\bstatus\\s*=\\s*\\'researching\\'/', $normalizedSql) === 1;
     $affected = 0;
 
@@ -622,6 +665,13 @@ function matrix_research_selector_test_claim_fact(
         }
 
         if ($filtersOpen && ($fact['status'] ?? null) !== 'open') {
+            continue;
+        }
+
+        if (
+            $filtersRetryable
+            && !in_array($fact['status'] ?? null, ['open', 'needs-deeper-research'], true)
+        ) {
             continue;
         }
 
@@ -872,6 +922,84 @@ describe("matrix research selector contract", () => {
     expect(factStatusById(dryRunResult.state)).toEqual(
       factStatusById(dryRunScenario),
     );
+  });
+
+  it("claims a needs-deeper-research fact as an automated retry when no open fact matches", async () => {
+    const scenario = scenarioWithOnlyNeedsDeeperResearchFact();
+    const result = await runSelector(
+      [
+        "--category",
+        "email",
+        "--entry",
+        "alpha-mail",
+        "--criterion",
+        "ownership",
+      ],
+      scenario,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.payload).toMatchObject({
+      factId: 105,
+      categoryId: "email",
+      entrySlug: "alpha-mail",
+      criterionKey: "ownership",
+      previousStatus: "needs-deeper-research",
+      status: "researching",
+      dryRun: false,
+    });
+    expect(result.state.transactions).toEqual(["begin", "commit"]);
+    expect(result.state.updates).toEqual([{ affected: 1, factId: 105 }]);
+    expect(factStatusById(result.state)).toEqual({
+      ...factStatusById(scenario),
+      "105": "researching",
+    });
+  });
+
+  it("prefers open facts over needs-deeper-research retries in the same target scope", async () => {
+    const scenario = scenarioWithOpenAndNeedsDeeperResearchFacts();
+    const targetArgs = [
+      "--category",
+      "email",
+      "--entry",
+      "alpha-mail",
+      "--criterion",
+      "ownership",
+    ];
+
+    const dryRunResult = await runSelector(
+      ["--dry-run", ...targetArgs],
+      scenario,
+    );
+    expect(dryRunResult.exitCode).toBe(0);
+    expect(dryRunResult.stderr).toBe("");
+    expect(dryRunResult.payload).toMatchObject({
+      factId: 105,
+      previousStatus: "open",
+      status: "open",
+      dryRun: true,
+    });
+    expect(dryRunResult.state.updates).toEqual([]);
+    expect(factStatusById(dryRunResult.state)).toEqual(
+      factStatusById(scenario),
+    );
+
+    const result = await runSelector(targetArgs, scenario);
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.payload).toMatchObject({
+      factId: 105,
+      previousStatus: "open",
+      status: "researching",
+      dryRun: false,
+    });
+    expect(result.state.transactions).toEqual(["begin", "commit"]);
+    expect(result.state.updates).toEqual([{ affected: 1, factId: 105 }]);
+    expect(factStatusById(result.state)).toEqual({
+      ...factStatusById(scenario),
+      "105": "researching",
+    });
   });
 
   it("exits 2 from dry-run without starting a transaction when no open fact matches", async () => {

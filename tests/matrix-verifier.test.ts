@@ -521,6 +521,58 @@ describe("matrix verifier contract", () => {
       expect(decision.reason).toMatch(/three|3|countable|independent/i);
     }
   });
+
+  it("does not accept forged supporting records with missing evidence fields", async () => {
+    const { decideMatrixVerificationOutcome, parseMatrixVerificationResponse } =
+      await loadVerifierModule();
+    const supports = [1, 2, 3].map((verifierIndex) =>
+      parseMatrixVerificationResponse(
+        modelResponse(validPayload(verifierIndex)),
+        selectedTarget,
+        pendingAttempt,
+        {
+          verifierIndex,
+          agent: "codex",
+          command: "codex exec",
+        },
+      ),
+    );
+    const forgedCases: Array<{
+      name: string;
+      patch: Partial<VerificationRecord>;
+    }> = [
+      { name: "empty source URL", patch: { sourceUrl: "" } },
+      { name: "empty audit quote", patch: { auditQuote: "" } },
+      { name: "empty raw response", patch: { rawResponse: "" } },
+      { name: "empty verifier notes", patch: { notes: "" } },
+      { name: "invalid accessed date", patch: { accessedDate: "2026-02-30" } },
+      {
+        name: "disabled countable support",
+        patch: { countsTowardAcceptance: false },
+      },
+    ];
+
+    for (const forgedCase of forgedCases) {
+      const records = [
+        supports[0],
+        { ...supports[1], ...forgedCase.patch },
+        supports[2],
+      ];
+      const decision = decideMatrixVerificationOutcome(pendingAttempt, records);
+
+      expect(decision.accepted, forgedCase.name).toBe(false);
+      expect(decision.recommendedAttemptStatus, forgedCase.name).toBe(
+        "needs-deeper-research",
+      );
+      expect(decision.recommendedFactStatus, forgedCase.name).toBe(
+        "needs-deeper-research",
+      );
+      expect(decision.countableVerifierCount, forgedCase.name).toBeLessThan(3);
+      expect(decision.reason, forgedCase.name).toMatch(
+        /three|3|countable|independent/i,
+      );
+    }
+  });
 });
 
 describe("matrix verification runner CLI", () => {
@@ -585,6 +637,69 @@ exit 99
         accepted: true,
         countableVerifierCount: 3,
       });
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects fewer than three mocked verifier responses before spawning a verifier", () => {
+    const tempDir = makeProjectTempDir("matrix-verifier-mock-count-");
+    const bundlePath = join(tempDir, "bundle.json");
+    const fakeCodexPath = join(tempDir, "codex");
+    const spawnedPath = join(tempDir, "spawned.txt");
+    const responsePaths = [1, 2].map((verifierIndex) =>
+      join(tempDir, `response-${verifierIndex}.txt`),
+    );
+
+    try {
+      writeFileSync(
+        bundlePath,
+        JSON.stringify({ target: selectedTarget, attempt: pendingAttempt }),
+        "utf8",
+      );
+      for (const [idx, responsePath] of responsePaths.entries()) {
+        writeFileSync(
+          responsePath,
+          modelResponse(validPayload(idx + 1)),
+          "utf8",
+        );
+      }
+      writeFileSync(
+        fakeCodexPath,
+        `#!/usr/bin/env bash
+printf 'spawned' > "$MATRIX_VERIFIER_SPAWNED_FILE"
+exit 99
+`,
+        "utf8",
+      );
+      chmodSync(fakeCodexPath, 0o755);
+
+      const result = spawnSync(
+        process.execPath,
+        [
+          verifierRunnerPath,
+          "--verifier",
+          "codex",
+          "--attempt-bundle-file",
+          bundlePath,
+          "--mock-response-files",
+          responsePaths.join(","),
+        ],
+        {
+          cwd: projectDir,
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: `${tempDir}:${process.env.PATH ?? ""}`,
+            MATRIX_VERIFIER_SPAWNED_FILE: spawnedPath,
+          },
+        },
+      );
+
+      expect(result.status).toBe(64);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toMatch(/exactly three response files/i);
+      expect(existsSync(spawnedPath)).toBe(false);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

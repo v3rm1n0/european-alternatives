@@ -299,10 +299,11 @@ JOIN `catalog_entries` ce ON ce.id = mf.entry_id
 JOIN `categories` c ON c.id = mf.category_id
 JOIN `matrix_criteria` mc ON mc.id = mf.criterion_id
                          AND mc.category_id = mf.category_id
-WHERE mf.status = 'open'
+WHERE mf.status IN ('open', 'needs-deeper-research')
   AND ce.status = 'alternative'
   AND ce.is_active = 1{$targetSql}
 ORDER BY
+  CASE mf.status WHEN 'open' THEN 0 ELSE 1 END ASC,
   c.sort_order ASC,
   c.id ASC,
   ce.name ASC,
@@ -331,10 +332,11 @@ JOIN `catalog_entries` ce ON ce.id = mf.entry_id
 JOIN `categories` c ON c.id = mf.category_id
 JOIN `matrix_criteria` mc ON mc.id = mf.criterion_id
                          AND mc.category_id = mf.category_id
-WHERE mf.status = 'open'
+WHERE mf.status IN ('open', 'needs-deeper-research')
   AND ce.status = 'alternative'
   AND ce.is_active = 1{$targetSql}
 ORDER BY
+  CASE mf.status WHEN 'open' THEN 0 ELSE 1 END ASC,
   c.sort_order ASC,
   c.id ASC,
   ce.name ASC,
@@ -352,7 +354,7 @@ function claimSelectedFact(PDO $pdo, int $factId): void
         "UPDATE `matrix_facts`
          SET `status` = 'researching'
          WHERE `id` = :fact_id
-           AND `status` = 'open'"
+           AND `status` IN ('open', 'needs-deeper-research')"
     );
     $stmt->execute([':fact_id' => $factId]);
 
