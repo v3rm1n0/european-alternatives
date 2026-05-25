@@ -78,6 +78,28 @@ Missing, open, researching, rejected, or otherwise unresolved facts are returned
 
 Locale fallback: when `locale=de` and no German translation exists for a field, the English value is returned via `COALESCE(column_de, column_en)`.
 
+### Category Matrix Concepts
+
+Category matrix criteria are category-native product-fit facts, not Trust Score inputs. Category matrix facts do not affect Trust Score. Criterion groups, criteria, and enum options belong to one category; the API and UI load them only when exactly one category is selected. The `other` category is a catch-all bucket and non-matrix: it does not have matrix criteria, matrix view mode, or category-specific fit filters.
+
+Criteria describe comparison rows for a category:
+
+- `value_type` defines the stored value shape: `boolean`, `enum`, `multi_enum`, `number`, `text`, `url`, or `date`.
+- `semantics` describes how maintainers should interpret the row for display and review: `beneficial`, `harmful`, `neutral`, `tradeoff`, `informational`, or `risk`.
+- `filter_mode` controls whether the criterion can become a category-specific fit filter: `none`, `optional`, `must_match`, `range`, or `multi_select`.
+
+Fit filters are browsing aids for product-fit comparisons. They compose with the normal browse filters, are active only in a single matrix-enabled category, and include `Unverified` results by default so unknown/open facts do not disappear from browse results. Unknown/open facts appear as `Unverified` and are included by default by fit filters. Matrix facts and fit filters do not change the Trust Score formula; Trust Score remains computed only from reservations, positive signals, and scoring metadata.
+
+Public fact state is intentionally narrower than internal research state:
+
+| Internal state                                                                  | Public API/UI state                         |
+| ------------------------------------------------------------------------------- | ------------------------------------------- |
+| `verified`                                                                      | `verified` with the typed value and optional public source metadata |
+| `not-applicable`                                                                | `not_applicable` with `value: null`         |
+| Missing fact, `open`, `researching`, `rejected`, `needs-deeper-research`, other unresolved state | `unverified` / `Unverified` with `value: null` |
+
+Public source links may be displayed in normal UI for verified facts. Audit quotes, raw researcher output, raw verifier output, and verifier notes are stored in `matrix_fact_attempts` or `matrix_fact_verifications` for review and audit only; the public matrix API does not return them. In short: public source links are UI-safe, while audit-only quotes and raw agent output are private review records.
+
 ---
 
 ## Database Schema
@@ -152,13 +174,16 @@ Trust scores are dynamically computed on every API request by `api/catalog/scori
 | ------------------------------------ | -------- | ---------------------------------------------------------------------------------------------- |
 | `scripts/db-schema.sql`              | SQL      | Full DDL for all 23 tables (run via `mysql` CLI)                                               |
 | `scripts/db-import.php`              | PHP      | Read `catalog.json`, seed catalog and matrix tables in a single transaction with advisory lock |
-| `scripts/matrix-research-select.php` | PHP      | Select one open matrix fact for the external research loop, with targeting and dry-run support |
+| `scripts/matrix-research-select.php` | PHP      | Select and claim one open or retry matrix fact for the external research loop, with targeting and dry-run support |
+| `scripts/matrix-research-run.mjs`    | Node.js  | Run one `codex` or `claude` researcher against one selected fact, with mock response support   |
+| `scripts/matrix-verify-run.mjs`      | Node.js  | Run three independent `codex` or `claude` verifier slots for one pending attempt, with mock response support |
+| `scripts/matrix-research-persist.php` | PHP     | Persist one research attempt, optional verifier decision, audit rows, and final fact status    |
 | `scripts/db-backup.sh`               | Bash     | Backup the MySQL database                                                                      |
 | `scripts/db-restore.sh`              | Bash     | Restore a database backup                                                                      |
 
 ### Matrix Research Selector
 
-Use the selector when an operator or automation loop needs exactly one open matrix fact to research:
+Use the selector when an operator or automation loop needs exactly one open or `needs-deeper-research` matrix fact to research:
 
 ```bash
 php scripts/matrix-research-select.php [--category messaging] [--entry primary-chat] [--criterion e2ee] [--dry-run]
@@ -170,7 +195,7 @@ Target options can be combined:
 - `--entry <entry_slug>` or `--entry-slug <entry_slug>` selects within one catalog entry.
 - `--criterion <criterion_key>` selects within one criterion key.
 
-Without target options, the selector chooses the next open fact across active alternatives. Partial targets choose the next open fact within that scope. A real run marks the selected fact as `researching`; `--dry-run` prints the target that would be selected without writing to the database.
+Without target options, the selector chooses the next open fact, then retry facts marked `needs-deeper-research`, across active alternatives. Partial targets choose the next eligible fact within that scope. A real run marks the selected fact as `researching`; `--dry-run` prints the target that would be selected without writing to the database.
 
 Successful selections print JSON to stdout:
 
@@ -195,9 +220,49 @@ In dry-run mode, `dryRun` is `true` and `status` remains the previous fact statu
 | Exit code | Meaning                                                                                                                                |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `0`       | A fact was selected, or dry-run found the fact that would be selected.                                                                 |
-| `2`       | No open matrix fact matched the requested scope. The script prints `No open matrix fact available for the requested scope.` to stderr. |
+| `2`       | No open or retry matrix fact matched the requested scope. The script prints `No open matrix fact available for the requested scope.` to stderr. |
 | `64`      | Invalid CLI usage, such as an unknown option or a missing option value.                                                                |
 | `1`       | Database or unexpected runtime failure.                                                                                                |
+
+### One-Fact Matrix Research Workflow
+
+The matrix research loop is deliberately one fact at a time. One script invocation researches one fact only and must not batch multiple categories, entries, criteria, products, or adjacent facts.
+
+1. Select and claim one target:
+
+   ```bash
+   php scripts/matrix-research-select.php --category messaging --entry primary-chat --criterion e2ee
+   ```
+
+   Store the selected target JSON for the next step. The target includes the fact ID, category, entry slug, criterion key, value type, previous status, and current `researching` status.
+
+2. Research exactly that selected fact:
+
+   ```bash
+   node scripts/matrix-research-run.mjs --researcher codex --target-file ./tmp/matrix-target.json
+   ```
+
+   `--researcher` supports `codex` and `claude`. The researcher output must answer one fact only and include an accessible source URL, source title when available, accessed date, one short audit quote copied from the source, confidence, and raw response metadata. A sourced proposed value becomes a `needs-verification` attempt. No evidence, an inaccessible source, or an unsuitable answer becomes `needs-deeper-research`.
+
+   Deterministic tests can pass `--mock-response-file <path>` instead of invoking a live CLI. Mock files are test fixtures, not live research evidence.
+
+3. If the attempt status is `needs-verification`, run three independent verifier slots:
+
+   ```bash
+   node scripts/matrix-verify-run.mjs --verifier codex --attempt-bundle-file ./tmp/matrix-attempt-bundle.json
+   ```
+
+   `--verifier` supports `codex` and `claude`. The three independent verifier rule requires each verifier slot to independently verify the same one pending attempt without relying on other verifier outputs. To count, each verifier record must satisfy the accessible-source quote requirement: it must use an accessible source and include its own source URL, accessed date, audit quote, verdict, notes, and raw response. Verified persistence requires three countable verifier records, one from each slot. Missing, inaccessible, or non-counting verifier evidence leaves the fact unresolved and normally returns it to `needs-deeper-research`.
+
+   Tests can use `--mock-response-file` three times, `--mock-response-files <paths>`, or `--mock-response-dir <path>` containing `response-1.txt`, `response-2.txt`, and `response-3.txt`.
+
+4. Persist the one-fact outcome:
+
+   ```bash
+   php scripts/matrix-research-persist.php --attempt-file ./tmp/matrix-attempt.json --decision-file ./tmp/matrix-decision.json
+   ```
+
+   Persistence writes the attempt, optional verifier decision, verifier audit rows, and final `matrix_facts` status in one transaction. A `needs-deeper-research` research attempt can be persisted without verifier rows. Pending verification attempts require a verifier decision. Verified outcomes publish the typed value and public source metadata to `matrix_facts`; rejected and retry outcomes keep the public value and public source fields empty so the API continues to show `Unverified`.
 
 ---
 
