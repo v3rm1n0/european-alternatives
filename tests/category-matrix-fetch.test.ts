@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 type JsonResponse = {
   ok: boolean;
@@ -114,8 +114,15 @@ async function loadCategoryMatrixModule(): Promise<{
 }
 
 describe("fetchCategoryMatrix", () => {
+  let fetchCategoryMatrix: Awaited<
+    ReturnType<typeof loadCategoryMatrixModule>
+  >["fetchCategoryMatrix"];
+
+  beforeAll(async () => {
+    ({ fetchCategoryMatrix } = await loadCategoryMatrixModule());
+  }, 15_000);
+
   it("fetches one localized category matrix without touching the main catalog endpoints", async () => {
-    const { fetchCategoryMatrix } = await loadCategoryMatrixModule();
     const fetcher = vi.fn(async () => jsonResponse(validMatrixPayload()));
 
     const result = await fetchCategoryMatrix("messaging", "de", {
@@ -174,7 +181,7 @@ describe("fetchCategoryMatrix", () => {
   });
 
   it("falls back to the default locale when a caller passes an unsupported locale", async () => {
-    const { fetchCategoryMatrix } = await loadCategoryMatrixModule();
+
     const payload = validMatrixPayload();
     payload.meta.locale = "en";
     const fetcher = vi.fn(async () => jsonResponse(payload));
@@ -201,7 +208,7 @@ describe("fetchCategoryMatrix", () => {
   });
 
   it("defaults omitted locale arguments to the default language", async () => {
-    const { fetchCategoryMatrix } = await loadCategoryMatrixModule();
+
     const payload = validMatrixPayload();
     payload.meta.locale = "en";
     const fetcher = vi.fn(async () => jsonResponse(payload));
@@ -228,7 +235,7 @@ describe("fetchCategoryMatrix", () => {
   });
 
   it("accepts the full public enum and typed fact value contract at the fetch boundary", async () => {
-    const { fetchCategoryMatrix } = await loadCategoryMatrixModule();
+
     const payload = {
       data: {
         category: {
@@ -397,7 +404,7 @@ describe("fetchCategoryMatrix", () => {
   });
 
   it("classifies valid zero-content matrix payloads as empty instead of an error", async () => {
-    const { fetchCategoryMatrix } = await loadCategoryMatrixModule();
+
     const emptyPayload = {
       data: {
         category: {
@@ -431,7 +438,7 @@ describe("fetchCategoryMatrix", () => {
   });
 
   it("returns unavailable state for category errors without throwing", async () => {
-    const { fetchCategoryMatrix } = await loadCategoryMatrixModule();
+
     const fetcher = vi.fn(async () =>
       jsonResponse(
         {
@@ -459,7 +466,7 @@ describe("fetchCategoryMatrix", () => {
   });
 
   it("returns unavailable state for missing category API errors without throwing", async () => {
-    const { fetchCategoryMatrix } = await loadCategoryMatrixModule();
+
     const fetcher = vi.fn(async () =>
       jsonResponse(
         {
@@ -486,7 +493,7 @@ describe("fetchCategoryMatrix", () => {
   });
 
   it("returns unavailable state for not-found responses without requiring an API error code", async () => {
-    const { fetchCategoryMatrix } = await loadCategoryMatrixModule();
+
     const fetcher = vi.fn(async () =>
       jsonResponse(
         {
@@ -512,7 +519,7 @@ describe("fetchCategoryMatrix", () => {
   });
 
   it("returns typed error state for backend failures without throwing", async () => {
-    const { fetchCategoryMatrix } = await loadCategoryMatrixModule();
+
     const fetcher = vi.fn(async () =>
       jsonResponse(
         {
@@ -538,7 +545,7 @@ describe("fetchCategoryMatrix", () => {
   });
 
   it("returns invalid payload errors for unsupported response locales", async () => {
-    const { fetchCategoryMatrix } = await loadCategoryMatrixModule();
+
     const invalidLocalePayload = validMatrixPayload();
     invalidLocalePayload.meta.locale = "fr";
     const fetcher = vi.fn(async () => jsonResponse(invalidLocalePayload));
@@ -557,7 +564,7 @@ describe("fetchCategoryMatrix", () => {
   });
 
   it("returns invalid payload errors for nested fact cells outside the public matrix shape", async () => {
-    const { fetchCategoryMatrix } = await loadCategoryMatrixModule();
+
     const invalidFactPayload = validMatrixPayload();
     (
       invalidFactPayload.data.alternatives[0]?.facts as unknown as Record<
@@ -614,7 +621,7 @@ describe("fetchCategoryMatrix", () => {
   });
 
   it("returns typed error state for network and malformed payload failures", async () => {
-    const { fetchCategoryMatrix } = await loadCategoryMatrixModule();
+
     const rejectingFetcher = vi.fn(async () => {
       throw new Error("offline");
     });
