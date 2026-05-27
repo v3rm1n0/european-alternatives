@@ -1,4 +1,10 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 
 import { loadNodeRuntime, useHostFilesystem } from "@php-wasm/node";
@@ -318,6 +324,7 @@ const matrixScenario: MatrixScenario = {
 };
 
 function createTempPath(prefix: string): string {
+  mkdirSync(localTempRoot, { recursive: true });
   const path = mkdtempSync(join(localTempRoot, prefix));
   tempPaths.push(path);
   return path;
