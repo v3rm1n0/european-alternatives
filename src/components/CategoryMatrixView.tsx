@@ -27,6 +27,24 @@ const UNVERIFIED_FACT: MatrixFact = {
   value: null,
 };
 
+function effectiveFactKey(fact: MatrixFact): string {
+  if (fact.status === "unverified") {
+    return "u";
+  }
+  if (fact.status === "not_applicable") {
+    return "na";
+  }
+  const value = fact.value;
+  if (value === null) {
+    return "v:null";
+  }
+  if (Array.isArray(value)) {
+    const sorted = [...value].sort();
+    return `v:arr:${JSON.stringify(sorted)}`;
+  }
+  return `v:${typeof value}:${JSON.stringify(value)}`;
+}
+
 function cellCustomProps(rowIndex: number, colIndex: number): CSSProperties {
   return {
     ["--cell-row" as never]: rowIndex,
@@ -41,6 +59,8 @@ export default function CategoryMatrixView({
 }: CategoryMatrixViewProps) {
   const [query, setQuery] = useState("");
   const [density, setDensity] = useState<MatrixDensity>("comfortable");
+  const [showOnlyDifferences, setShowOnlyDifferences] = useState(false);
+  const [hideUnverified, setHideUnverified] = useState(false);
   const { t, i18n } = useTranslation("browse");
   const visibleAlternatives = useMemo(
     () =>
@@ -77,33 +97,74 @@ export default function CategoryMatrixView({
   );
   const isQuerying = tokens.length > 0;
   const filteredGroups = useMemo<MatrixGroup[]>(() => {
-    if (!isQuerying) {
+    const applyDifferences =
+      showOnlyDifferences && visibleAlternatives.length > 1;
+    const applyHideUnverified = hideUnverified;
+    const applySearch = isQuerying;
+
+    if (!applyDifferences && !applyHideUnverified && !applySearch) {
       return groupsWithCriteria;
     }
+
     const next: MatrixGroup[] = [];
     for (const group of groupsWithCriteria) {
       const groupLabelLower = group.label.toLowerCase();
       const criteria = group.criteria.filter((criterion) => {
-        const labelLower = criterion.label.toLowerCase();
-        const helpLower = (criterion.helpText ?? "").toLowerCase();
-        return tokens.every(
-          (token) =>
-            labelLower.includes(token) ||
-            helpLower.includes(token) ||
-            groupLabelLower.includes(token),
-        );
+        if (applyHideUnverified) {
+          const allUnverified = visibleAlternatives.every((alternative) => {
+            const fact = alternative.facts[criterion.id] ?? UNVERIFIED_FACT;
+            return fact.status === "unverified";
+          });
+          if (allUnverified && visibleAlternatives.length > 0) {
+            return false;
+          }
+        }
+        if (applyDifferences) {
+          const firstKey = effectiveFactKey(
+            visibleAlternatives[0]?.facts[criterion.id] ?? UNVERIFIED_FACT,
+          );
+          const allSame = visibleAlternatives.every(
+            (alternative) =>
+              effectiveFactKey(
+                alternative.facts[criterion.id] ?? UNVERIFIED_FACT,
+              ) === firstKey,
+          );
+          if (allSame) {
+            return false;
+          }
+        }
+        if (applySearch) {
+          const labelLower = criterion.label.toLowerCase();
+          const helpLower = (criterion.helpText ?? "").toLowerCase();
+          return tokens.every(
+            (token) =>
+              labelLower.includes(token) ||
+              helpLower.includes(token) ||
+              groupLabelLower.includes(token),
+          );
+        }
+        return true;
       });
       if (criteria.length > 0) {
         next.push({ ...group, criteria });
       }
     }
     return next;
-  }, [groupsWithCriteria, isQuerying, tokens]);
+  }, [
+    groupsWithCriteria,
+    isQuerying,
+    tokens,
+    showOnlyDifferences,
+    hideUnverified,
+    visibleAlternatives,
+  ]);
   const filteredCriteria = useMemo(
     () => filteredGroups.flatMap((group) => group.criteria),
     [filteredGroups],
   );
-  const showEmptyState = isQuerying && filteredCriteria.length === 0;
+  const togglesActive = showOnlyDifferences || hideUnverified;
+  const showEmptyState =
+    filteredCriteria.length === 0 && (isQuerying || togglesActive);
 
   return (
     <section
@@ -122,6 +183,10 @@ export default function CategoryMatrixView({
         onDensityChange={setDensity}
         matchCount={filteredCriteria.length}
         totalCount={totalCriterionCount}
+        showOnlyDifferences={showOnlyDifferences}
+        onShowOnlyDifferencesChange={setShowOnlyDifferences}
+        hideUnverified={hideUnverified}
+        onHideUnverifiedChange={setHideUnverified}
       />
       {showEmptyState ? (
         <div
@@ -133,15 +198,31 @@ export default function CategoryMatrixView({
             {t("matrixView.toolbar.emptyTitle")}
           </h3>
           <p className="category-matrix-toolbar-empty-body">
-            {t("matrixView.toolbar.emptyBody")}
+            {togglesActive
+              ? t("matrixView.toolbar.emptyBodyWithToggles")
+              : t("matrixView.toolbar.emptyBody")}
           </p>
-          <button
-            type="button"
-            className="category-matrix-toolbar-empty-clear"
-            onClick={() => setQuery("")}
-          >
-            {t("matrixView.toolbar.clearSearch")}
-          </button>
+          {togglesActive && (
+            <button
+              type="button"
+              className="category-matrix-toolbar-empty-reset"
+              onClick={() => {
+                setShowOnlyDifferences(false);
+                setHideUnverified(false);
+              }}
+            >
+              {t("matrixView.toolbar.resetToggles")}
+            </button>
+          )}
+          {isQuerying && (
+            <button
+              type="button"
+              className="category-matrix-toolbar-empty-clear"
+              onClick={() => setQuery("")}
+            >
+              {t("matrixView.toolbar.clearSearch")}
+            </button>
+          )}
         </div>
       ) : (
         <>

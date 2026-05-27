@@ -84,7 +84,11 @@
       "densityCompact": "Kompakt",
       "densityComfortable": "Komfortabel",
       "emptyTitle": "Keine passenden Kriterien",
-      "emptyBody": "Keine Kriterien entsprechen der aktuellen Suche. Setze die Suche zurueck, um alle Kriterien zu sehen."
+      "emptyBody": "Keine Kriterien entsprechen der aktuellen Suche. Setze die Suche zurueck, um alle Kriterien zu sehen.",
+      "emptyBodyWithToggles": "Keine Kriterien entsprechen den aktiven Filtern. Setze die Schalter zurueck oder leere die Suche, um mehr Kriterien zu sehen.",
+      "showDifferences": "Nur Unterschiede anzeigen",
+      "hideUnverified": "Unbestaetigte ausblenden",
+      "resetToggles": "Schalter zuruecksetzen"
     }
   },
   "card": {

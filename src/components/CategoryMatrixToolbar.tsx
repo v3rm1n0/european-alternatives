@@ -9,6 +9,10 @@ interface CategoryMatrixToolbarProps {
   onDensityChange: (next: MatrixDensity) => void;
   matchCount: number;
   totalCount: number;
+  showOnlyDifferences: boolean;
+  onShowOnlyDifferencesChange: (next: boolean) => void;
+  hideUnverified: boolean;
+  onHideUnverifiedChange: (next: boolean) => void;
 }
 
 export default function CategoryMatrixToolbar({
@@ -18,6 +22,10 @@ export default function CategoryMatrixToolbar({
   onDensityChange,
   matchCount,
   totalCount,
+  showOnlyDifferences,
+  onShowOnlyDifferencesChange,
+  hideUnverified,
+  onHideUnverifiedChange,
 }: CategoryMatrixToolbarProps) {
   const { t } = useTranslation("browse");
   const searchLabel = t("matrixView.toolbar.searchLabel");
@@ -26,6 +34,8 @@ export default function CategoryMatrixToolbar({
   const densityLabel = t("matrixView.toolbar.densityLabel");
   const comfortableLabel = t("matrixView.toolbar.densityComfortable");
   const compactLabel = t("matrixView.toolbar.densityCompact");
+  const showDifferencesLabel = t("matrixView.toolbar.showDifferences");
+  const hideUnverifiedLabel = t("matrixView.toolbar.hideUnverified");
   const hasQuery = query.trim() !== "";
 
   return (
@@ -66,19 +76,51 @@ export default function CategoryMatrixToolbar({
         )}
       </div>
       {hasQuery && (
-        <span className="category-matrix-toolbar-match-count" aria-live="polite">
+        <span
+          className="category-matrix-toolbar-match-count"
+          aria-live="polite"
+        >
           {t("matrixView.toolbar.matchCount", {
             matched: matchCount,
             total: totalCount,
           })}
         </span>
       )}
+      <div className="category-matrix-toolbar-toggles">
+        <button
+          type="button"
+          aria-pressed={showOnlyDifferences ? "true" : "false"}
+          className={
+            showOnlyDifferences
+              ? "category-matrix-toolbar-toggle is-active"
+              : "category-matrix-toolbar-toggle"
+          }
+          onClick={() => onShowOnlyDifferencesChange(!showOnlyDifferences)}
+        >
+          {showDifferencesLabel}
+        </button>
+        <button
+          type="button"
+          aria-pressed={hideUnverified ? "true" : "false"}
+          className={
+            hideUnverified
+              ? "category-matrix-toolbar-toggle is-active"
+              : "category-matrix-toolbar-toggle"
+          }
+          onClick={() => onHideUnverifiedChange(!hideUnverified)}
+        >
+          {hideUnverifiedLabel}
+        </button>
+      </div>
       <div
         className="category-matrix-toolbar-density"
         role="radiogroup"
         aria-label={densityLabel}
       >
-        <span className="category-matrix-toolbar-density-label" aria-hidden="true">
+        <span
+          className="category-matrix-toolbar-density-label"
+          aria-hidden="true"
+        >
           {densityLabel}
         </span>
         <button

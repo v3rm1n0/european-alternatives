@@ -84,7 +84,11 @@
       "densityCompact": "Compact",
       "densityComfortable": "Comfortable",
       "emptyTitle": "No criteria match",
-      "emptyBody": "No criteria match the current search. Clear the search to see all criteria."
+      "emptyBody": "No criteria match the current search. Clear the search to see all criteria.",
+      "emptyBodyWithToggles": "No criteria match the active filters. Reset the toggles or clear the search to see more criteria.",
+      "showDifferences": "Show only differences",
+      "hideUnverified": "Hide unverified",
+      "resetToggles": "Reset toggles"
     }
   },
   "card": {
