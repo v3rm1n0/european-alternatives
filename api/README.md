@@ -182,6 +182,7 @@ Trust scores are dynamically computed on every API request by `api/catalog/scori
 | `scripts/matrix-verify-run.mjs`      | Node.js  | Run three independent `codex` or `claude` verifier slots for one pending attempt, with mock response support |
 | `scripts/matrix-research-persist.php` | PHP     | Persist one research attempt, optional verifier decision, audit rows, and final fact status    |
 | `scripts/matrix-research-loop.mjs`   | Node.js  | Repeatedly drive the one-fact matrix research pipeline until a limit fires or the queue is empty |
+| `scripts/score-deep-research-folder.sh` | Bash  | Autonomous batch runner that walks a folder of deep-research Markdown documents and scores each catalog entry through the five-stage pipeline (match → extract → verify → worksheet → DB write + API post-check) |
 | `scripts/db-backup.sh`               | Bash     | Backup the MySQL database                                                                      |
 | `scripts/db-restore.sh`              | Bash     | Restore a database backup                                                                      |
 
@@ -335,6 +336,75 @@ The runner prints one compact line per completed iteration to stdout (`[iter 12]
 | `0`       | The loop reached a stop condition cleanly (queue empty, limit hit, or consecutive-failure cap reached).                                |
 | `1`       | The selector reported invalid usage (exit `64`), or the runner itself encountered an unexpected error.                                 |
 | `64`      | Invalid runner CLI usage, such as an unknown option or a non-positive value for a numeric flag.                                        |
+
+### Deep-Research Folder Scoring Runner
+
+`scripts/score-deep-research-folder.sh` is the top-level operator entrypoint for the deep-research trust-scoring pipeline. Point it at a folder of deep-research Markdown documents and it processes each one end-to-end, one document at a time, through the five stages built up by `vet-deep-research-codex.sh`, `vet-deep-research-extract-codex.sh`, `vet-deep-research-verify-codex.sh`, `vet-deep-research-worksheet.sh`, and `apply-deep-research-scoring-run.mjs`.
+
+```bash
+bash scripts/score-deep-research-folder.sh \
+  --input-dir tmp/deep-research-inbox \
+  --catalog-snapshot-file tmp/catalog-snapshot.json \
+  --api-base-url https://european-alternatives.cloud \
+  --output-dir tmp/score-run-2026-05-27 \
+  [--entry primary-chat] [--limit 5] \
+  [--dry-run] [--continue-on-error] [--replace-existing] \
+  [--accessed-date 2026-05-27] [--php /usr/bin/php8.1]
+```
+
+Documents are processed sequentially with no parallel DB writes. A per-document failure in any stage (match, extract, verify, worksheet, or apply) leaves the database untouched for that document — only stage 5 writes, and it wraps its write in a single transaction. The batch as a whole stops on the first failure unless `--continue-on-error` is set.
+
+Options:
+
+- `--input-dir <path>` (required) — folder of deep-research Markdown documents.
+- `--catalog-snapshot-file <path>` — pre-fetched catalog snapshot forwarded to stage 1 (match).
+- `--api-base-url <url>` (required outside `--dry-run`) — forwarded to stage 5 for the post-write API readback.
+- `--output-dir <path>` (required) — per-batch artifact root. Each processed document gets its own `<entrySlug>/` subdirectory.
+- `--entry <slug>` — restrict the batch to the one document whose stage-1 match resolves to this entry slug.
+- `--limit <n>` — cap the number of post-match documents processed, after sorted-filename ordering.
+- `--dry-run` — propagated to every stage; performs discovery/matching and prints planned actions without DB mutation.
+- `--continue-on-error` — do not abort on the first failed document; finish the batch and report every outcome.
+- `--replace-existing` — forwarded **only** to stage 5. Allows re-scoring an entry that already has stored scoring rows. Without this flag, an already-scored entry is counted as `skipped`, not failed.
+- `--accessed-date YYYY-MM-DD` — forwarded to stages 2 and 3 (extract and verify) so source-accessed dates are reproducible.
+- `--php <bin>` — forwarded to the stage-5 PHP wrapper for non-default PHP binaries.
+
+Both `--flag value` and `--flag=value` forms are accepted for every option.
+
+Per-document artifacts are written under `<output-dir>/<entrySlug>/`:
+
+- `match.json` — stage-1 match record for the document.
+- `entry.json` — minimal catalog entry record passed to stages 2 and 3.
+- `extraction.json` — stage-2 (extract) output.
+- `verified-action.json` — stage-3 (verify) output, used as input to stages 4 and 5.
+- `worksheet-meta.json` — stage-4 (worksheet) metadata, including the worksheet path.
+- `apply-outcome.json` — stage-5 (apply) outcome.
+- `status.json` — final per-document status (`ready`, `skipped`, or `failed`, with `failedStage` and `exitCode` on failure).
+- `stage-*.stderr.log` — captured stderr from any stage that wrote to stderr.
+
+A batch-level `<output-dir>/summary.json` aggregates the run:
+
+```json
+{
+  "inputDir": "/abs/path/to/inbox",
+  "outputDir": "/abs/path/to/output",
+  "dryRun": false,
+  "counts": { "processed": 7, "ready": 5, "skipped": 1, "failed": 1 },
+  "documents": [
+    { "entrySlug": "primary-chat", "documentPath": "...", "status": "ready", "worksheetPath": "tmp/scoring-worksheets/primary-chat.md" },
+    { "entrySlug": "secure-mail", "documentPath": "...", "status": "skipped", "reason": "already_scored_no_replace_flag" },
+    { "entrySlug": "...", "status": "failed", "failedStage": "verify", "exitCode": 2 }
+  ]
+}
+```
+
+`processed` counts only documents the runner actually attempted post-match. Documents that stage 1 reports as `no_match` or `ambiguous_match` are counted toward `skipped`, never toward `processed`.
+
+| Exit code | Meaning                                                                                                                                |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`       | All matched documents reached `ready` (or were intentionally `skipped`, including already-scored entries without `--replace-existing`). |
+| `1`       | One or more documents failed. Only reachable when `--continue-on-error` is set; without that flag the first failure's exit code propagates verbatim instead. |
+| `64`      | Invalid CLI usage (missing required option, unknown option, non-numeric `--limit`).                                                    |
+| `65`      | Pre-flight failed (input directory unreadable or not a directory; catalog snapshot file missing).                                      |
 
 ---
 
