@@ -1799,7 +1799,7 @@ button:disabled {
    ========================================== */
 
 .category-matrix-filter-panel {
-  display: flex;
+  display: none;
   flex-direction: column;
   gap: var(--spacing-lg);
   width: 100%;
