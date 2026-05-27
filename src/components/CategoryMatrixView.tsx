@@ -49,8 +49,7 @@ export default function CategoryMatrixView({
     category: matrix.data.category.name,
   });
   const groupsWithCriteria = useMemo(
-    () =>
-      matrix.data.groups.filter((group) => group.criteria.length > 0),
+    () => matrix.data.groups.filter((group) => group.criteria.length > 0),
     [matrix.data.groups],
   );
   const flatCriteria = useMemo(
@@ -149,7 +148,158 @@ export default function CategoryMatrixView({
           </tbody>
         </table>
       </div>
+      <MobileMatrixInspector
+        groups={groupsWithCriteria}
+        alternatives={visibleAlternatives}
+        t={t}
+        language={i18n.language}
+      />
     </section>
+  );
+}
+
+interface MobileMatrixInspectorProps {
+  groups: CategoryMatrixApiResponse["data"]["groups"];
+  alternatives: CategoryMatrixApiResponse["data"]["alternatives"];
+  t: TranslateFn;
+  language: string;
+}
+
+export function deriveFocusedAlternativeIds(
+  primarySelection: string,
+  secondarySelection: string,
+  alternatives: ReadonlyArray<{ id: string }>,
+): { primaryId: string; secondaryId: string } {
+  const primaryId = alternatives.some(
+    (alternative) => alternative.id === primarySelection,
+  )
+    ? primarySelection
+    : (alternatives[0]?.id ?? "");
+  const secondaryId =
+    secondarySelection !== "" &&
+    secondarySelection !== primaryId &&
+    alternatives.some((alternative) => alternative.id === secondarySelection)
+      ? secondarySelection
+      : "";
+  return { primaryId, secondaryId };
+}
+
+function MobileMatrixInspector({
+  groups,
+  alternatives,
+  t,
+  language,
+}: MobileMatrixInspectorProps) {
+  const primaryLabel = t("matrixView.inspector.primaryLabel");
+  const compareLabel = t("matrixView.inspector.compareLabel");
+  const noSecondaryLabel = t("matrixView.inspector.noSecondary");
+
+  const [primarySelection, setPrimaryId] = useState<string>("");
+  const [secondarySelection, setSecondaryId] = useState<string>("");
+
+  const { primaryId, secondaryId } = deriveFocusedAlternativeIds(
+    primarySelection,
+    secondarySelection,
+    alternatives,
+  );
+
+  const focusedAlternatives = [
+    alternatives.find((alternative) => alternative.id === primaryId),
+    secondaryId === ""
+      ? undefined
+      : alternatives.find((alternative) => alternative.id === secondaryId),
+  ].filter((alternative): alternative is (typeof alternatives)[number] =>
+    Boolean(alternative),
+  );
+
+  return (
+    <div
+      className="category-matrix-mobile-inspector"
+      data-testid="category-matrix-mobile-inspector"
+    >
+      <div className="category-matrix-mobile-inspector-controls">
+        <label className="category-matrix-mobile-inspector-control">
+          <span className="category-matrix-mobile-inspector-control-label">
+            {primaryLabel}
+          </span>
+          <select
+            className="category-matrix-mobile-inspector-select"
+            aria-label={primaryLabel}
+            value={primaryId}
+            onChange={(event) => setPrimaryId(event.target.value)}
+          >
+            {alternatives.map((alternative) => (
+              <option key={alternative.id} value={alternative.id}>
+                {alternative.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="category-matrix-mobile-inspector-control">
+          <span className="category-matrix-mobile-inspector-control-label">
+            {compareLabel}
+          </span>
+          <select
+            className="category-matrix-mobile-inspector-select"
+            aria-label={compareLabel}
+            value={secondaryId}
+            onChange={(event) => setSecondaryId(event.target.value)}
+          >
+            <option value="">{noSecondaryLabel}</option>
+            {alternatives
+              .filter((alternative) => alternative.id !== primaryId)
+              .map((alternative) => (
+                <option key={alternative.id} value={alternative.id}>
+                  {alternative.name}
+                </option>
+              ))}
+          </select>
+        </label>
+      </div>
+      {groups.map((group) => (
+        <section
+          key={group.id}
+          className="category-matrix-mobile-inspector-group"
+          aria-label={group.label}
+        >
+          <h3 className="category-matrix-mobile-inspector-group-label">
+            {group.label}
+          </h3>
+          {group.criteria.map((criterion) => (
+            <div
+              key={criterion.id}
+              className="category-matrix-mobile-inspector-row"
+            >
+              <span className="category-matrix-mobile-inspector-criterion-label">
+                {criterion.label}
+              </span>
+              <div className="category-matrix-mobile-inspector-cells">
+                {focusedAlternatives.map((alternative) => (
+                  <div
+                    key={alternative.id}
+                    className="category-matrix-mobile-inspector-cell"
+                    data-alternative-id={alternative.id}
+                  >
+                    <span className="category-matrix-mobile-inspector-alternative-label">
+                      {alternative.name}
+                    </span>
+                    <MatrixCell
+                      fact={alternative.facts[criterion.id] ?? UNVERIFIED_FACT}
+                      criterion={criterion}
+                      alternativeId={alternative.id}
+                      alternativeName={alternative.name}
+                      t={t}
+                      language={language}
+                      idScope="mobile"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </section>
+      ))}
+    </div>
   );
 }
 
@@ -159,7 +309,13 @@ interface MatrixLegendProps {
 
 function MatrixLegend({ t }: MatrixLegendProps) {
   const entries: ReadonlyArray<{
-    tone: "positive" | "warning" | "negative" | "neutral" | "unverified" | "not-applicable";
+    tone:
+      | "positive"
+      | "warning"
+      | "negative"
+      | "neutral"
+      | "unverified"
+      | "not-applicable";
     labelKey: string;
   }> = [
     { tone: "positive", labelKey: "matrixView.legend.positive" },
@@ -279,6 +435,7 @@ interface MatrixCellProps {
   alternativeName: string;
   t: TranslateFn;
   language: string;
+  idScope?: string;
 }
 
 function MatrixCell({
@@ -288,9 +445,11 @@ function MatrixCell({
   alternativeName,
   t,
   language,
+  idScope,
 }: MatrixCellProps) {
   const [open, setOpen] = useState(false);
-  const popoverId = `category-matrix-cell-popover-${alternativeId}-${criterion.id}`;
+  const scopeSuffix = idScope === undefined ? "" : `-${idScope}`;
+  const popoverId = `category-matrix-cell-popover-${alternativeId}-${criterion.id}${scopeSuffix}`;
   const triggerLabel = t("matrixView.popover.openLabel", {
     product: alternativeName,
     criterion: criterion.label,
@@ -364,10 +523,7 @@ function renderTriggerBody(
   return popoverBody;
 }
 
-function renderPopoverSource(
-  fact: MatrixFact,
-  t: TranslateFn,
-): ReactNode {
+function renderPopoverSource(fact: MatrixFact, t: TranslateFn): ReactNode {
   if (fact.status !== "verified") {
     return null;
   }
@@ -471,10 +627,7 @@ function renderVerifiedValue(
   }
 }
 
-function renderBooleanVerdict(
-  value: boolean,
-  t: TranslateFn,
-): ReactNode {
+function renderBooleanVerdict(value: boolean, t: TranslateFn): ReactNode {
   const toneClass = value
     ? "category-matrix-fact--positive"
     : "category-matrix-fact--negative";
@@ -606,4 +759,3 @@ function renderUrlValue(value: string): ReactNode {
     </a>
   );
 }
-

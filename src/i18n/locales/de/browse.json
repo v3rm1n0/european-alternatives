@@ -69,6 +69,11 @@
       "value": "Wert",
       "source": "Quelle",
       "noSource": "Keine oeffentliche Quelle verfuegbar"
+    },
+    "inspector": {
+      "primaryLabel": "Primaeres Produkt",
+      "compareLabel": "Vergleichen mit",
+      "noSecondary": "Kein Vergleich"
     }
   },
   "card": {

@@ -2266,6 +2266,131 @@ button:disabled {
 }
 
 /* ==========================================
+   Mobile Matrix Inspector
+   ==========================================
+   Phone-first comparison surface that replaces the wide spreadsheet at
+   narrow viewports. The desktop table and this inspector are both rendered
+   into SSR markup; the @media block below decides which tree is visible.
+*/
+
+.category-matrix-mobile-inspector {
+  display: none;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  width: 100%;
+  min-width: 0;
+  padding: var(--spacing-md);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+}
+
+.category-matrix-mobile-inspector-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.category-matrix-mobile-inspector-control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.category-matrix-mobile-inspector-control-label {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.category-matrix-mobile-inspector-select {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.category-matrix-mobile-inspector-select:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.category-matrix-mobile-inspector-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.category-matrix-mobile-inspector-group-label {
+  margin: 0;
+  font-family: var(--font-family-heading);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  color: var(--text-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.category-matrix-mobile-inspector-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+}
+
+.category-matrix-mobile-inspector-criterion-label {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.category-matrix-mobile-inspector-cells {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--spacing-sm);
+}
+
+@supports (grid-template-columns: repeat(auto-fit, minmax(0, 1fr))) {
+  .category-matrix-mobile-inspector-cells {
+    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  }
+}
+
+.category-matrix-mobile-inspector-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.category-matrix-mobile-inspector-alternative-label {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 767px) {
+  .category-matrix-view-scroll {
+    display: none;
+  }
+  .category-matrix-mobile-inspector {
+    display: flex;
+  }
+}
+
+/* ==========================================
    Browse ↔ Matrix morph (CSP-safe, compositor-driven)
    ========================================== */
 
@@ -2308,25 +2433,40 @@ button:disabled {
   transform-origin: center;
 }
 
-.browse-morph-region[data-morph="active"] .category-matrix-view-alternative-label {
-  animation: browse-morph-rowlabel-in 280ms cubic-bezier(0.32, 0.72, 0.2, 1) both;
+.browse-morph-region[data-morph="active"]
+  .category-matrix-view-alternative-label {
+  animation: browse-morph-rowlabel-in 280ms cubic-bezier(0.32, 0.72, 0.2, 1)
+    both;
   animation-delay: calc(var(--cell-row, 0) * 60ms);
 }
 
-.browse-morph-region[data-morph="active"] .category-matrix-view-head .category-matrix-view-group-row > th {
+.browse-morph-region[data-morph="active"]
+  .category-matrix-view-head
+  .category-matrix-view-group-row
+  > th {
   animation: browse-morph-head-in 280ms cubic-bezier(0.32, 0.72, 0.2, 1) both;
   animation-delay: 280ms;
 }
 
-.browse-morph-region[data-morph="active"] .category-matrix-view-head .category-matrix-view-criterion-row > th {
+.browse-morph-region[data-morph="active"]
+  .category-matrix-view-head
+  .category-matrix-view-criterion-row
+  > th {
   animation: browse-morph-head-in 280ms cubic-bezier(0.32, 0.72, 0.2, 1) both;
   animation-delay: 340ms;
 }
 
 .browse-morph-region[data-morph="reduced"] .category-matrix-view-fact-cell,
-.browse-morph-region[data-morph="reduced"] .category-matrix-view-alternative-label,
-.browse-morph-region[data-morph="reduced"] .category-matrix-view-head .category-matrix-view-group-row > th,
-.browse-morph-region[data-morph="reduced"] .category-matrix-view-head .category-matrix-view-criterion-row > th {
+.browse-morph-region[data-morph="reduced"]
+  .category-matrix-view-alternative-label,
+.browse-morph-region[data-morph="reduced"]
+  .category-matrix-view-head
+  .category-matrix-view-group-row
+  > th,
+.browse-morph-region[data-morph="reduced"]
+  .category-matrix-view-head
+  .category-matrix-view-criterion-row
+  > th {
   animation: none;
 }
 

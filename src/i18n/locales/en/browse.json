@@ -69,6 +69,11 @@
       "value": "Value",
       "source": "Source",
       "noSource": "No public source available"
+    },
+    "inspector": {
+      "primaryLabel": "Primary product",
+      "compareLabel": "Compare with",
+      "noSecondary": "No comparison"
     }
   },
   "card": {
