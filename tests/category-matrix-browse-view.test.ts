@@ -199,12 +199,24 @@ vi.mock("framer-motion", async () => {
       children,
       ...props
     }: Record<string, unknown> & { children?: ReactNode }) => {
-      const domProps = Object.fromEntries(
-        Object.entries(props).filter(([key]) => !motionProps.has(key)),
-      );
+      const domProps: Record<string, unknown> = {};
+
+      for (const [key, value] of Object.entries(props)) {
+        if (motionProps.has(key)) {
+          continue;
+        }
+        if (key === "layoutId") {
+          domProps["data-morph-id"] = String(value);
+          continue;
+        }
+        domProps[key] = value;
+      }
 
       return React.createElement(tag, domProps, children);
     };
+
+  const passthrough = ({ children }: { children?: ReactNode }) =>
+    React.createElement(React.Fragment, null, children);
 
   return {
     motion: new Proxy(
@@ -213,6 +225,10 @@ vi.mock("framer-motion", async () => {
         get: (_target, tag) => createMotionComponent(String(tag)),
       },
     ),
+    AnimatePresence: passthrough,
+    LayoutGroup: passthrough,
+    MotionConfig: passthrough,
+    useReducedMotion: () => false,
   };
 });
 

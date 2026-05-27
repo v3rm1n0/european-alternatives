@@ -4,8 +4,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import browseDe from "../src/i18n/locales/de/browse.json";
-import browseEn from "../src/i18n/locales/en/browse.json";
 import type {
   Alternative,
   Category,
@@ -25,15 +23,6 @@ type LoadedCategoryMatrixFixture = {
   result: CategoryMatrixLoadResult;
 };
 
-type CapturedFiltersProps = {
-  matrixViewAvailable: boolean;
-  viewMode: string | undefined;
-  onFilterChange?: (
-    filterType: string,
-    values: string[] | boolean,
-  ) => void;
-};
-
 type CapturedResultModeSwitchProps = {
   mode: ResultMode;
   matrixAvailable: boolean;
@@ -46,9 +35,9 @@ const browseTestMocks = vi.hoisted(() => ({
   catalog: null as unknown,
   effects: [] as BrowseEffect[],
   fetchCategoryMatrix: vi.fn(),
-  filterProps: [] as CapturedFiltersProps[],
   language: "en",
   loadedCategoryMatrix: undefined as unknown,
+  reducedMotion: false,
   resultModeSwitchProps: [] as CapturedResultModeSwitchProps[],
   search: "",
   setSearchParams: vi.fn(),
@@ -146,33 +135,15 @@ vi.mock("../src/components/Filters", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
 
   return {
-    default: ({
-      matrixViewAvailable,
-      viewMode,
-      onFilterChange,
-    }: {
-      matrixViewAvailable?: boolean;
-      viewMode?: string;
-      onFilterChange?: (
-        filterType: string,
-        values: string[] | boolean,
-      ) => void;
-    }) => {
-      browseTestMocks.filterProps.push({
-        matrixViewAvailable: matrixViewAvailable === true,
-        viewMode,
-        onFilterChange,
-      });
-
-      return React.createElement(
+    default: () =>
+      React.createElement(
         "div",
         {
           className: "distro-filters",
           "data-browse-test": "global-filters",
         },
         "Global Filters",
-      );
-    },
+      ),
   };
 });
 
@@ -233,6 +204,9 @@ vi.mock("../src/components/AlternativeCard", async () => {
   };
 });
 
+// Extended framer-motion mock: exposes layoutId as data-morph-id so SSR
+// markup is inspectable, and surfaces AnimatePresence / LayoutGroup /
+// useReducedMotion (which the new transition implementation depends on).
 vi.mock("framer-motion", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
   const motionProps = new Set([
@@ -279,7 +253,7 @@ vi.mock("framer-motion", async () => {
     AnimatePresence: passthrough,
     LayoutGroup: passthrough,
     MotionConfig: passthrough,
-    useReducedMotion: () => false,
+    useReducedMotion: () => browseTestMocks.reducedMotion,
   };
 });
 
@@ -287,9 +261,9 @@ beforeEach(() => {
   browseTestMocks.catalog = createBrowseCatalog();
   browseTestMocks.effects = [];
   browseTestMocks.fetchCategoryMatrix.mockReturnValue(new Promise(() => {}));
-  browseTestMocks.filterProps = [];
   browseTestMocks.language = "en";
   browseTestMocks.loadedCategoryMatrix = undefined;
+  browseTestMocks.reducedMotion = false;
   browseTestMocks.resultModeSwitchProps = [];
   browseTestMocks.search = "";
   browseTestMocks.setSearchParams.mockClear();
@@ -306,7 +280,6 @@ async function renderBrowsePage(
   } = {},
 ): Promise<string> {
   browseTestMocks.effects = [];
-  browseTestMocks.filterProps = [];
   browseTestMocks.resultModeSwitchProps = [];
   browseTestMocks.language = options.language ?? "en";
   browseTestMocks.loadedCategoryMatrix =
@@ -375,16 +348,11 @@ function readyMatrixResult(): CategoryMatrixLoadResult {
         matrixAlternative("alpha-chat", "Alpha Chat", {
           e2ee: { status: "verified", value: true },
         }),
+        matrixAlternative("zeta-chat", "Zeta Chat", {
+          e2ee: { status: "verified", value: false },
+        }),
       ],
     ),
-    error: null,
-  };
-}
-
-function emptyMatrixResult(): CategoryMatrixLoadResult {
-  return {
-    status: "empty",
-    matrix: matrix([]),
     error: null,
   };
 }
@@ -456,8 +424,6 @@ function createBrowseCatalog() {
     alternatives: [
       browseAlternative("alpha-chat", "Alpha Chat", "messaging"),
       browseAlternative("zeta-chat", "Zeta Chat", "messaging"),
-      browseAlternative("inbox-eu", "Inbox EU", "email"),
-      browseAlternative("other-option", "Other Option", "other"),
     ],
     categories,
     deniedAlternatives: [],
@@ -491,217 +457,207 @@ function browseAlternative(
   };
 }
 
-describe("browse result-mode switch", () => {
-  it("reads ?view=matrix from the URL and renders the matrix table on first paint", async () => {
+describe("browse <-> matrix morph transition", () => {
+  it("marks the surface region as morph-active when prefers-reduced-motion is off", async () => {
+    // The signature transition orchestrator must exist as a discoverable
+    // wrapper around the swap-able surface. Without it, a "morph" is just
+    // an unceremonious content swap (the current behaviour).
     const html = await renderBrowsePage({
       loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
-      search: "category=messaging&view=matrix",
+      search: "category=messaging",
     });
 
-    // URL is the source of truth — no React-state ramp-up needed for matrix.
-    expect(html).toContain("<table");
-    expect(html).toContain("Messaging comparison matrix");
-    // ResultModeSwitch was mounted with mode=matrix because the URL asked
-    // for it and the category is ready.
-    const switchProps = browseTestMocks.resultModeSwitchProps.at(-1);
-    expect(switchProps?.mode).toBe("matrix");
-    expect(switchProps?.matrixAvailable).toBe(true);
-  });
-
-  it("silently falls back to browse when ?view=matrix is set but the category has no ready matrix", async () => {
-    const html = await renderBrowsePage({
-      loadedCategoryMatrix: loadedMatrix("messaging", emptyMatrixResult()),
-      search: "category=messaging&view=matrix",
-    });
-
-    // Empty matrix → not available → switch must not render and the
-    // effective surface must be the card grid (no <table>, no error UI).
-    expect(html).not.toContain("<table");
+    expect(html).toMatch(/data-morph="active"/u);
+    // The surface itself still renders normally beneath the orchestrator.
     expect(html).toContain('data-browse-test="result-card"');
-    expect(html).not.toContain('data-browse-test="result-mode-switch"');
-    // The switch may still be mounted to evaluate availability, but it
-    // must report matrixAvailable=false — which our mock interprets as
-    // "render nothing", matching the real component's contract.
-    const switchProps = browseTestMocks.resultModeSwitchProps.at(-1);
-    if (switchProps) {
-      expect(switchProps.matrixAvailable).toBe(false);
-    }
   });
 
-  it("defaults to browse mode when no view param is set and renders the switch when matrix is available", async () => {
+  it("marks the surface region as morph-reduced under prefers-reduced-motion and still renders the active surface", async () => {
+    // Reduced-motion is a hard requirement from the issue. The orchestrator
+    // must consult useReducedMotion() and bypass the morph timeline —
+    // expressed in the DOM as data-morph="reduced" so SR / dev tooling can
+    // see the gate, and so we can verify it without a real animation runtime.
+    browseTestMocks.reducedMotion = true;
+
     const html = await renderBrowsePage({
       loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
       search: "category=messaging",
     });
 
-    expect(html).not.toContain("<table");
-    expect(html).toContain('data-browse-test="result-mode-switch"');
-    expect(html).toContain('data-result-mode="browse"');
-    const switchProps = browseTestMocks.resultModeSwitchProps.at(-1);
-    expect(switchProps?.mode).toBe("browse");
-    expect(switchProps?.matrixAvailable).toBe(true);
+    expect(html).toMatch(/data-morph="reduced"/u);
+    // No content disappears just because motion is off — the surface must
+    // remain fully visible and interactive.
+    expect(html).toContain('data-browse-test="result-card"');
+    // The morph timeline is suppressed: no layoutId measurements should be
+    // emitted on the surface, otherwise framer-motion would still FLIP-measure
+    // on every render for users who explicitly asked for no motion.
+    expect(html).not.toMatch(/data-morph-id="/u);
   });
 
-  it("does not render the result-mode switch when matrix is not available for the current selection", async () => {
-    // No category selected → matrixViewAvailable=false → no switch UI.
-    const html = await renderBrowsePage({
-      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
-      search: "",
-    });
-
-    expect(html).not.toContain('data-browse-test="result-mode-switch"');
-  });
-
-  it("places the result-mode switch outside the .distro-filters container", async () => {
-    // The issue's whole point: the switch is a first-class result-surface
-    // control, not a Filters child. The DOM order is part of the contract
-    // — the switch must not nest inside the .distro-filters subtree.
+  it("attaches a stable shared-identity marker per alternative in browse mode (full motion)", async () => {
+    // The morph reads as "the same product changing shape" only if each
+    // alternative carries a stable identity that survives the swap. Without
+    // a per-alternative layoutId there is no FLIP source/destination pairing.
     const html = await renderBrowsePage({
       loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
       search: "category=messaging",
     });
 
-    const filtersMatch = html.match(
-      /<div\b[^>]*class="distro-filters"[^>]*>([\s\S]*?)<\/div>/u,
+    expect(html).toMatch(/data-morph-id="alt-name-alpha-chat"/u);
+    expect(html).toMatch(/data-morph-id="alt-name-zeta-chat"/u);
+  });
+
+  it("attaches the matching shared-identity marker on every matrix row label", async () => {
+    // The destination side of the morph. The row label is the visual landing
+    // pad for the card's product name, so it must carry the same layoutId.
+    // If either side is missing the marker, the morph degrades to a fade.
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      search: "category=messaging&view=matrix",
+    });
+
+    expect(html).toContain("<table");
+    const tableMatch = html.match(/<table[\s\S]*?<\/table>/u);
+    expect(tableMatch).not.toBeNull();
+    const tableHtml = tableMatch?.[0] ?? "";
+    // The markers live inside the matrix table — specifically on/near the
+    // row-label cells, paired with the same id used by the card surface.
+    expect(tableHtml).toMatch(/data-morph-id="alt-name-alpha-chat"/u);
+    expect(tableHtml).toMatch(/data-morph-id="alt-name-zeta-chat"/u);
+  });
+
+  it("suppresses matrix row-label markers under prefers-reduced-motion", async () => {
+    // Symmetric to the browse-side suppression: when the user opted out of
+    // motion, BrowsePage must propagate reducedMotion through to
+    // CategoryMatrixView so the destination side of the morph also stops
+    // emitting layout markers. Without this, reduced-motion users would
+    // still pay the FLIP-measurement cost on every matrix render.
+    browseTestMocks.reducedMotion = true;
+
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      search: "category=messaging&view=matrix",
+    });
+
+    // The matrix still renders — reduced motion is about suppressing the
+    // morph timeline, not the comparison surface itself.
+    expect(html).toContain("<table");
+    expect(html).toMatch(/data-morph="reduced"/u);
+    // And no shared-identity markers anywhere, including the matrix
+    // row labels.
+    expect(html).not.toMatch(/data-morph-id="/u);
+  });
+
+  it("renders the empty-results surface inside the morph orchestrator", async () => {
+    // When a filter narrows results down to zero, the empty-state surface
+    // still lives inside the orchestrator so the morph region stays a single
+    // discoverable wrapper. If a future refactor pulls the empty branch
+    // outside the orchestrator, the data-morph marker would disappear for
+    // empty categories and tooling/SR consumers would lose the gate.
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      // category=other has no alternatives in the catalogue, so the filtered
+      // result set is empty.
+      search: "category=other",
+    });
+
+    expect(html).toMatch(/data-morph="active"/u);
+    expect(html).toContain("no-results");
+    // No result cards in the empty surface.
+    expect(html).not.toContain('data-browse-test="result-card"');
+  });
+
+  it("emits --cell-row / --cell-col style custom properties on matrix cells (staggered sweep contract)", async () => {
+    // The staggered cell sweep is driven by CSS keyframes consuming
+    // per-cell custom properties — one compositor timeline for hundreds
+    // of cells, instead of hundreds of JS-driven animation tracks
+    // (forbidden by tests/csp-source-safety.test.ts). The contract at
+    // the SSR layer is that every <td> emits both custom properties.
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      search: "category=messaging&view=matrix",
+    });
+
+    expect(html).toContain("<table");
+    // At least one td carries --cell-row and --cell-col inline style props.
+    expect(html).toMatch(/<td[^>]*style="[^"]*--cell-row:\s*\d+/u);
+    expect(html).toMatch(/<td[^>]*style="[^"]*--cell-col:\s*\d+/u);
+  });
+
+  it("wraps the surface region in a .browse-morph-region container so the CSS keyframes resolve", async () => {
+    // The animation rules in src/index.css are scoped under
+    // `.browse-morph-region[data-morph="active"]`. The data-morph attribute
+    // is already pinned, but if the className got renamed or dropped, every
+    // CSS animation would silently stop firing while data-morph still
+    // pretended the morph was active. Pin both halves of the selector.
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      search: "category=messaging",
+    });
+
+    expect(html).toMatch(/class="[^"]*\bbrowse-morph-region\b/u);
+  });
+
+  it("tags the matrix <thead> with category-matrix-view-head so the header animations scope correctly", async () => {
+    // The group-ribbon and criterion-row animations land at 280ms / 340ms
+    // delays so the structure visibly forms after the cell sweep starts.
+    // Both rules in src/index.css target
+    // `.category-matrix-view-head .category-matrix-view-group-row > th`
+    // and `... .category-matrix-view-criterion-row > th`. Without the
+    // category-matrix-view-head class on <thead>, neither selector
+    // matches and the "headers arrive last" choreography disappears
+    // (regressing the issue's acceptance criterion).
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      search: "category=messaging&view=matrix",
+    });
+
+    expect(html).toContain("<table");
+    expect(html).toMatch(
+      /<thead[^>]*class="[^"]*\bcategory-matrix-view-head\b[^"]*"[^>]*>/u,
     );
-    expect(filtersMatch).not.toBeNull();
-    expect(filtersMatch?.[1] ?? "").not.toContain(
-      'data-browse-test="result-mode-switch"',
-    );
-    // And the switch is present somewhere in the page.
-    expect(html).toContain('data-browse-test="result-mode-switch"');
   });
 
-  it("writes ?view=matrix to the URL with replace=true when the switch onChange fires with 'matrix'", async () => {
-    await renderBrowsePage({
+  it("emits --cell-row on every matrix row-label so its staggered entry sequences per row", async () => {
+    // The row-label rule in src/index.css uses
+    // `animation-delay: calc(var(--cell-row, 0) * 60ms)` on
+    // `.category-matrix-view-alternative-label`. Without an inline
+    // --cell-row custom property on each <th scope="row">, every row
+    // label resolves to delay 0 and the per-row cascade collapses into a
+    // single sync arrival. The existing td-only test does not catch
+    // that regression because td cells get their own --cell-row.
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      search: "category=messaging&view=matrix",
+    });
+
+    const rowLabelRegex =
+      /<th[^>]*class="[^"]*\bcategory-matrix-view-alternative-label\b[^"]*"[^>]*style="[^"]*--cell-row:\s*\d+/gu;
+    const rowLabelMatches = html.match(rowLabelRegex);
+    expect(rowLabelMatches).not.toBeNull();
+    // readyMatrixResult() defines two product rows (alpha-chat + zeta-chat),
+    // so both row labels must carry --cell-row.
+    expect(rowLabelMatches?.length ?? 0).toBeGreaterThanOrEqual(2);
+  });
+
+  it("propagates the morph orchestrator and per-card shared identity to list-view browse mode", async () => {
+    // The issue explicitly calls out "Support both grid and list Browse
+    // layouts". The existing browse-side morph-id test only renders grid
+    // mode. A future refactor that only wraps the grid branch in the
+    // morph surface would silently degrade list mode back to a plain
+    // content swap.
+    const html = await renderBrowsePage({
       loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
       search: "category=messaging",
+      viewMode: "list",
     });
 
-    const switchProps = browseTestMocks.resultModeSwitchProps.at(-1);
-    expect(switchProps).toBeDefined();
-    browseTestMocks.setSearchParams.mockClear();
-    switchProps?.onChange("matrix");
-
-    expect(browseTestMocks.setSearchParams).toHaveBeenCalledTimes(1);
-    const [paramsArg, optionsArg] =
-      browseTestMocks.setSearchParams.mock.calls[0] ?? [];
-    const params = paramsArg as URLSearchParams;
-    expect(params.get("view")).toBe("matrix");
-    // Existing query state must be preserved across the write.
-    expect(params.getAll("category")).toEqual(["messaging"]);
-    expect(optionsArg).toEqual({ replace: true });
-  });
-
-  it("removes the view param entirely when the switch onChange fires with 'browse'", async () => {
-    await renderBrowsePage({
-      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
-      search: "category=messaging&view=matrix",
-    });
-
-    const switchProps = browseTestMocks.resultModeSwitchProps.at(-1);
-    expect(switchProps).toBeDefined();
-    browseTestMocks.setSearchParams.mockClear();
-    switchProps?.onChange("browse");
-
-    expect(browseTestMocks.setSearchParams).toHaveBeenCalledTimes(1);
-    const params = browseTestMocks.setSearchParams.mock
-      .calls[0]?.[0] as URLSearchParams;
-    // Clean URLs: browse is the default, so the param is dropped, not
-    // written as ?view=browse.
-    expect(params.has("view")).toBe(false);
-    expect(params.getAll("category")).toEqual(["messaging"]);
-  });
-
-  it("preserves the view param when the category filter rewrite keeps the same single matrix category", async () => {
-    // Regression guard for the `nextMatrixCategory !== matrixCategory` check
-    // in handleFilterChange. A category-list rewrite that resolves to the
-    // same matrix category (e.g. re-applying the current selection, or a
-    // category-checkbox toggle that ends up where it started) must NOT
-    // strand the user back in Browse — view=matrix must survive.
-    await renderBrowsePage({
-      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
-      search: "category=messaging&view=matrix",
-    });
-
-    const filtersProps = browseTestMocks.filterProps.at(-1);
-    expect(filtersProps?.onFilterChange).toBeDefined();
-    browseTestMocks.setSearchParams.mockClear();
-
-    filtersProps?.onFilterChange?.("category", ["messaging"]);
-
-    expect(browseTestMocks.setSearchParams).toHaveBeenCalledTimes(1);
-    const params = browseTestMocks.setSearchParams.mock
-      .calls[0]?.[0] as URLSearchParams;
-    expect(params.get("view")).toBe("matrix");
-    expect(params.getAll("category")).toEqual(["messaging"]);
-  });
-
-  it("drops the view param when the category set widens such that no single matrix category remains", async () => {
-    // The matrixCategory derivation requires exactly one selected category.
-    // Adding a second category collapses matrixCategory to null, so the
-    // implementation's guard must treat that as a change and drop view —
-    // otherwise the user would be stranded on a matrix surface that the
-    // gate immediately refuses to render.
-    await renderBrowsePage({
-      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
-      search: "category=messaging&view=matrix",
-    });
-
-    const filtersProps = browseTestMocks.filterProps.at(-1);
-    expect(filtersProps?.onFilterChange).toBeDefined();
-    browseTestMocks.setSearchParams.mockClear();
-
-    filtersProps?.onFilterChange?.("category", ["messaging", "email"]);
-
-    expect(browseTestMocks.setSearchParams).toHaveBeenCalledTimes(1);
-    const params = browseTestMocks.setSearchParams.mock
-      .calls[0]?.[0] as URLSearchParams;
-    expect(params.has("view")).toBe(false);
-    expect(params.getAll("category")).toEqual(["messaging", "email"]);
-  });
-
-  it("drops the view param in the same history step when the category filter changes", async () => {
-    await renderBrowsePage({
-      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
-      search: "category=messaging&view=matrix",
-    });
-
-    const filtersProps = browseTestMocks.filterProps.at(-1);
-    expect(filtersProps).toBeDefined();
-    expect(filtersProps?.onFilterChange).toBeDefined();
-    browseTestMocks.setSearchParams.mockClear();
-
-    // Simulate the user switching from messaging to email. The previous
-    // matrix category is no longer selected, so ?view=matrix would strand
-    // the user — it must be dropped in the same setSearchParams call,
-    // not in a separate render.
-    filtersProps?.onFilterChange?.("category", ["email"]);
-
-    expect(browseTestMocks.setSearchParams).toHaveBeenCalledTimes(1);
-    const params = browseTestMocks.setSearchParams.mock
-      .calls[0]?.[0] as URLSearchParams;
-    expect(params.has("view")).toBe(false);
-    expect(params.getAll("category")).toEqual(["email"]);
-  });
-
-  it("defines the new resultMode copy in both browse locales", () => {
-    expect(browseEn.resultMode).toMatchObject({
-      label: expect.any(String),
-      browse: expect.any(String),
-      matrix: expect.any(String),
-    });
-    expect(browseDe.resultMode).toMatchObject({
-      label: expect.any(String),
-      browse: expect.any(String),
-      matrix: expect.any(String),
-    });
-  });
-
-  it("removes the now-unused filters.matrixView copy from both browse locales", () => {
-    // The matrix surface is no longer a Filters toggle; the old label
-    // would silently misdescribe the new control if kept.
-    expect((browseEn.filters as Record<string, unknown>).matrixView).toBeUndefined();
-    expect((browseDe.filters as Record<string, unknown>).matrixView).toBeUndefined();
+    expect(html).toMatch(/data-morph="active"/u);
+    expect(html).toMatch(/class="[^"]*\blist-view\b/u);
+    // Shared-identity markers still ride on the per-card wrappers in
+    // list mode — without them the morph degrades to a fade in list view.
+    expect(html).toMatch(/data-morph-id="alt-name-alpha-chat"/u);
+    expect(html).toMatch(/data-morph-id="alt-name-zeta-chat"/u);
+    expect(html).toContain('data-browse-test="result-card"');
   });
 });

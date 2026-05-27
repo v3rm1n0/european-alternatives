@@ -1,7 +1,14 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { sanitizeHref } from "../utils/sanitizeHref";
+
+function cellCustomProps(rowIndex: number, colIndex: number): CSSProperties {
+  return {
+    ["--cell-row" as never]: rowIndex,
+    ["--cell-col" as never]: colIndex,
+  };
+}
 import type {
   CategoryMatrixApiResponse,
   MatrixCriterion,
@@ -14,6 +21,7 @@ import type {
 interface CategoryMatrixViewProps {
   matrix: CategoryMatrixApiResponse;
   visibleAlternativeIds?: ReadonlySet<string>;
+  reducedMotion?: boolean;
 }
 
 const UNVERIFIED_FACT: MatrixFact = {
@@ -24,6 +32,7 @@ const UNVERIFIED_FACT: MatrixFact = {
 export default function CategoryMatrixView({
   matrix,
   visibleAlternativeIds,
+  reducedMotion = false,
 }: CategoryMatrixViewProps) {
   const { t, i18n } = useTranslation("browse");
   const visibleAlternatives = useMemo(
@@ -58,7 +67,7 @@ export default function CategoryMatrixView({
       </div>
       <div className="category-matrix-view-scroll" tabIndex={0}>
         <table className="category-matrix-view-table" aria-label={title}>
-          <thead>
+          <thead className="category-matrix-view-head">
             <tr className="category-matrix-view-group-row">
               <th
                 scope="col"
@@ -105,18 +114,23 @@ export default function CategoryMatrixView({
             </tr>
           </thead>
           <tbody>
-            {visibleAlternatives.map((alternative) => (
+            {visibleAlternatives.map((alternative, rowIndex) => (
               <tr key={alternative.id}>
                 <th
                   scope="row"
                   className="category-matrix-view-alternative-label"
+                  data-morph-id={
+                    reducedMotion ? undefined : `alt-name-${alternative.id}`
+                  }
+                  style={cellCustomProps(rowIndex, 0)}
                 >
                   {alternative.name}
                 </th>
-                {flatCriteria.map((criterion) => (
+                {flatCriteria.map((criterion, colIndex) => (
                   <td
                     key={criterion.id}
                     className="category-matrix-view-fact-cell"
+                    style={cellCustomProps(rowIndex, colIndex + 1)}
                   >
                     {renderMatrixFact(
                       alternative.facts[criterion.id] ?? UNVERIFIED_FACT,

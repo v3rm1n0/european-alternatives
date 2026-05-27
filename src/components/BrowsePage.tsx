@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useCatalog } from "../contexts/CatalogContext";
 import AlternativeCard from "./AlternativeCard";
 import Filters from "./Filters";
@@ -381,6 +381,65 @@ export default function BrowsePage() {
     [filteredAlternatives, expandedCardIds],
   );
 
+  const reducedMotion = useReducedMotion() ?? false;
+  const morphTransition = { duration: 0.42, ease: [0.32, 0.72, 0.2, 1] as const };
+
+  const browseSurfaceVariants = reducedMotion
+    ? {
+        initial: { opacity: 1 },
+        animate: { opacity: 1 },
+        exit: { opacity: 0, transition: { duration: 0 } },
+      }
+    : {
+        initial: { opacity: 0 },
+        animate: {
+          opacity: 1,
+          transition: {
+            duration: 0.32,
+            ease: [0.32, 0.72, 0.2, 1] as const,
+            when: "beforeChildren" as const,
+            staggerChildren: 0.025,
+            delayChildren: 0.08,
+          },
+        },
+        exit: {
+          opacity: 1,
+          transition: {
+            when: "afterChildren" as const,
+            staggerChildren: 0.02,
+            staggerDirection: -1 as const,
+          },
+        },
+      };
+
+  const browseCardVariants = reducedMotion
+    ? {
+        initial: { opacity: 1 },
+        animate: { opacity: 1 },
+        exit: { opacity: 0, transition: { duration: 0 } },
+      }
+    : {
+        initial: { opacity: 0, y: 20, scaleY: 1 },
+        animate: {
+          opacity: 1,
+          y: 0,
+          scaleY: 1,
+          transition: { duration: 0.36, ease: [0.32, 0.72, 0.2, 1] as const },
+        },
+        exit: {
+          opacity: 0,
+          scaleY: 0.18,
+          transition: {
+            opacity: { duration: 0.18, ease: "easeIn" as const },
+            scaleY: {
+              duration: 0.28,
+              delay: 0.08,
+              ease: [0.6, 0.04, 0.32, 1] as const,
+            },
+          },
+        },
+      };
+
   if (loading) {
     return (
       <div className="browse-page">
@@ -448,70 +507,105 @@ export default function BrowsePage() {
           matrixAvailable={matrixViewAvailable}
         />
 
-        {filteredAlternatives.length > 0 ? (
-          showMatrixView && readyCategoryMatrix !== null ? (
-            <CategoryMatrixView
-              matrix={readyCategoryMatrix}
-              visibleAlternativeIds={visibleMatrixAlternativeIds}
-            />
-          ) : (
-            <div
-              className={`alt-grid${cardViewMode === "list" ? " list-view" : ""}`}
-            >
-              {filteredAlternatives.map((alternative, index) => (
-                <motion.div
-                  key={alternative.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{
-                    duration: 0.4,
-                    delay: Math.min(0.1 + index * 0.05, 1),
-                  }}
-                >
-                  <AlternativeCard
-                    alternative={alternative}
-                    viewMode={cardViewMode}
-                    usVendorLookup={usVendorLookup}
-                    onExpand={handleExpand}
-                    isComparing={compareCardIds.has(alternative.id)}
-                    onToggleCompare={handleToggleCompare}
-                  />
-                </motion.div>
-              ))}
-            </div>
-          )
-        ) : (
-          <motion.div
-            className="no-results"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.4 }}
-          >
-            {alternatives.length === 0 ? (
-              <div className="empty-catalogue">
-                <div className="empty-icon" aria-hidden="true">
-                  <span className="fi fi-eu"></span>
-                </div>
-                <h2>{t("catalogueComingSoon")}</h2>
-                <p>{t("catalogueComingSoonDesc")}</p>
-              </div>
-            ) : (
-              <div className="empty-catalogue">
-                <div className="empty-icon" aria-hidden="true">
-                  <svg
-                    className="empty-search-icon"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
+        <div
+          className="browse-morph-region"
+          data-morph={reducedMotion ? "reduced" : "active"}
+        >
+          <AnimatePresence mode="wait" initial={false}>
+              {filteredAlternatives.length > 0 ? (
+                showMatrixView && readyCategoryMatrix !== null ? (
+                  <motion.div
+                    key="matrix-surface"
+                    className="browse-morph-surface browse-morph-surface--matrix"
+                    initial={
+                      reducedMotion ? false : { opacity: 0, scale: 0.98 }
+                    }
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={
+                      reducedMotion
+                        ? { opacity: 0 }
+                        : { opacity: 0, scale: 0.98 }
+                    }
+                    transition={reducedMotion ? { duration: 0 } : morphTransition}
                   >
-                    <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
-                  </svg>
-                </div>
-                <h2>{t("noResults")}</h2>
-                <p>{t("noResultsDesc")}</p>
-              </div>
-            )}
-          </motion.div>
-        )}
+                    <CategoryMatrixView
+                      matrix={readyCategoryMatrix}
+                      visibleAlternativeIds={visibleMatrixAlternativeIds}
+                      reducedMotion={reducedMotion}
+                    />
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="browse-surface"
+                    className={`browse-morph-surface browse-morph-surface--browse alt-grid${cardViewMode === "list" ? " list-view" : ""}`}
+                    variants={browseSurfaceVariants}
+                    initial="initial"
+                    animate="animate"
+                    exit="exit"
+                    style={{ transformOrigin: "top" }}
+                  >
+                    {filteredAlternatives.map((alternative) => (
+                      <motion.div
+                        key={alternative.id}
+                        className="browse-morph-card"
+                        data-morph-id={
+                          reducedMotion
+                            ? undefined
+                            : `alt-name-${alternative.id}`
+                        }
+                        variants={browseCardVariants}
+                        style={{ transformOrigin: "top" }}
+                      >
+                        <AlternativeCard
+                          alternative={alternative}
+                          viewMode={cardViewMode}
+                          usVendorLookup={usVendorLookup}
+                          onExpand={handleExpand}
+                          isComparing={compareCardIds.has(alternative.id)}
+                          onToggleCompare={handleToggleCompare}
+                        />
+                      </motion.div>
+                    ))}
+                  </motion.div>
+                )
+              ) : (
+                <motion.div
+                  key="empty-surface"
+                  className="no-results"
+                  initial={reducedMotion ? false : { opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={
+                    reducedMotion ? { duration: 0 } : { duration: 0.4 }
+                  }
+                >
+                  {alternatives.length === 0 ? (
+                    <div className="empty-catalogue">
+                      <div className="empty-icon" aria-hidden="true">
+                        <span className="fi fi-eu"></span>
+                      </div>
+                      <h2>{t("catalogueComingSoon")}</h2>
+                      <p>{t("catalogueComingSoonDesc")}</p>
+                    </div>
+                  ) : (
+                    <div className="empty-catalogue">
+                      <div className="empty-icon" aria-hidden="true">
+                        <svg
+                          className="empty-search-icon"
+                          viewBox="0 0 24 24"
+                          fill="currentColor"
+                        >
+                          <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+                        </svg>
+                      </div>
+                      <h2>{t("noResults")}</h2>
+                      <p>{t("noResultsDesc")}</p>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+        </div>
       </motion.div>
 
       {compareCardIds.size > 0 && expandedCardIds.size === 0 && (

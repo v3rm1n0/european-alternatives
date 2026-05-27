@@ -2093,6 +2093,71 @@ button:disabled {
 }
 
 /* ==========================================
+   Browse ↔ Matrix morph (CSP-safe, compositor-driven)
+   ========================================== */
+
+@keyframes browse-morph-cell-in {
+  from {
+    opacity: 0;
+    transform: scale(0.62);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes browse-morph-rowlabel-in {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes browse-morph-head-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.browse-morph-region[data-morph="active"] .category-matrix-view-fact-cell {
+  animation: browse-morph-cell-in 320ms cubic-bezier(0.32, 0.72, 0.2, 1) both;
+  animation-delay: calc(var(--cell-col, 0) * 25ms + var(--cell-row, 0) * 60ms);
+  transform-origin: center;
+}
+
+.browse-morph-region[data-morph="active"] .category-matrix-view-alternative-label {
+  animation: browse-morph-rowlabel-in 280ms cubic-bezier(0.32, 0.72, 0.2, 1) both;
+  animation-delay: calc(var(--cell-row, 0) * 60ms);
+}
+
+.browse-morph-region[data-morph="active"] .category-matrix-view-head .category-matrix-view-group-row > th {
+  animation: browse-morph-head-in 280ms cubic-bezier(0.32, 0.72, 0.2, 1) both;
+  animation-delay: 280ms;
+}
+
+.browse-morph-region[data-morph="active"] .category-matrix-view-head .category-matrix-view-criterion-row > th {
+  animation: browse-morph-head-in 280ms cubic-bezier(0.32, 0.72, 0.2, 1) both;
+  animation-delay: 340ms;
+}
+
+.browse-morph-region[data-morph="reduced"] .category-matrix-view-fact-cell,
+.browse-morph-region[data-morph="reduced"] .category-matrix-view-alternative-label,
+.browse-morph-region[data-morph="reduced"] .category-matrix-view-head .category-matrix-view-group-row > th,
+.browse-morph-region[data-morph="reduced"] .category-matrix-view-head .category-matrix-view-criterion-row > th {
+  animation: none;
+}
+
+/* ==========================================
    Alternative Card Component
    ========================================== */
 
