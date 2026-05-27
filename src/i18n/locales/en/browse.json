@@ -88,8 +88,17 @@
       "emptyBodyWithToggles": "No criteria match the active filters. Reset the toggles or clear the search to see more criteria.",
       "showDifferences": "Show only differences",
       "hideUnverified": "Hide unverified",
-      "resetToggles": "Reset toggles"
-    }
+      "resetToggles": "Reset toggles",
+      "focusOnly": "Focus on pinned",
+      "clearPins": "Clear pins",
+      "pinnedCount": "{{count}} pinned"
+    },
+    "pinAction": "Pin {{product}}",
+    "unpinAction": "Unpin {{product}}",
+    "pinnedBadge": "Pinned",
+    "focusedEmptyTitle": "No pinned products visible",
+    "focusedEmptyBody": "Your pinned products are filtered out. Exit focus mode to see them again.",
+    "exitFocus": "Exit focus mode"
   },
   "card": {
     "showMore": "Show more",

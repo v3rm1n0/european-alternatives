@@ -61,8 +61,10 @@ export default function CategoryMatrixView({
   const [density, setDensity] = useState<MatrixDensity>("comfortable");
   const [showOnlyDifferences, setShowOnlyDifferences] = useState(false);
   const [hideUnverified, setHideUnverified] = useState(false);
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set<string>());
+  const [focusedOnly, setFocusedOnly] = useState(false);
   const { t, i18n } = useTranslation("browse");
-  const visibleAlternatives = useMemo(
+  const browseFilteredAlternatives = useMemo(
     () =>
       visibleAlternativeIds === undefined
         ? matrix.data.alternatives
@@ -71,6 +73,56 @@ export default function CategoryMatrixView({
           ),
     [matrix.data.alternatives, visibleAlternativeIds],
   );
+  const pinnedAlternatives = useMemo(
+    () =>
+      browseFilteredAlternatives.filter((alternative) =>
+        pinnedIds.has(alternative.id),
+      ),
+    [browseFilteredAlternatives, pinnedIds],
+  );
+  const orderedAlternatives = useMemo(() => {
+    if (pinnedAlternatives.length === 0) {
+      return browseFilteredAlternatives;
+    }
+    const pinnedSet = new Set(pinnedAlternatives.map((alt) => alt.id));
+    const unpinned = browseFilteredAlternatives.filter(
+      (alternative) => !pinnedSet.has(alternative.id),
+    );
+    return [...pinnedAlternatives, ...unpinned];
+  }, [browseFilteredAlternatives, pinnedAlternatives]);
+  const focusMode = focusedOnly && pinnedAlternatives.length > 0;
+  const visibleAlternatives = focusMode
+    ? pinnedAlternatives
+    : orderedAlternatives;
+  const comparisonAlternatives = focusMode
+    ? pinnedAlternatives
+    : browseFilteredAlternatives;
+  const focusedEmpty = focusedOnly && pinnedAlternatives.length === 0;
+  const pinnedCount = useMemo(
+    () =>
+      matrix.data.alternatives.filter((alternative) =>
+        pinnedIds.has(alternative.id),
+      ).length,
+    [matrix.data.alternatives, pinnedIds],
+  );
+  const togglePin = (alternativeId: string) => {
+    setPinnedIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(alternativeId)) {
+        next.delete(alternativeId);
+      } else {
+        next.add(alternativeId);
+      }
+      return next;
+    });
+  };
+  const clearPins = () => {
+    setPinnedIds(new Set<string>());
+    setFocusedOnly(false);
+  };
+  const exitFocus = () => {
+    setFocusedOnly(false);
+  };
   const title = t("matrixView.title", {
     category: matrix.data.category.name,
   });
@@ -98,7 +150,7 @@ export default function CategoryMatrixView({
   const isQuerying = tokens.length > 0;
   const filteredGroups = useMemo<MatrixGroup[]>(() => {
     const applyDifferences =
-      showOnlyDifferences && visibleAlternatives.length > 1;
+      showOnlyDifferences && comparisonAlternatives.length > 1;
     const applyHideUnverified = hideUnverified;
     const applySearch = isQuerying;
 
@@ -111,19 +163,19 @@ export default function CategoryMatrixView({
       const groupLabelLower = group.label.toLowerCase();
       const criteria = group.criteria.filter((criterion) => {
         if (applyHideUnverified) {
-          const allUnverified = visibleAlternatives.every((alternative) => {
+          const allUnverified = comparisonAlternatives.every((alternative) => {
             const fact = alternative.facts[criterion.id] ?? UNVERIFIED_FACT;
             return fact.status === "unverified";
           });
-          if (allUnverified && visibleAlternatives.length > 0) {
+          if (allUnverified && comparisonAlternatives.length > 0) {
             return false;
           }
         }
         if (applyDifferences) {
           const firstKey = effectiveFactKey(
-            visibleAlternatives[0]?.facts[criterion.id] ?? UNVERIFIED_FACT,
+            comparisonAlternatives[0]?.facts[criterion.id] ?? UNVERIFIED_FACT,
           );
-          const allSame = visibleAlternatives.every(
+          const allSame = comparisonAlternatives.every(
             (alternative) =>
               effectiveFactKey(
                 alternative.facts[criterion.id] ?? UNVERIFIED_FACT,
@@ -156,7 +208,7 @@ export default function CategoryMatrixView({
     tokens,
     showOnlyDifferences,
     hideUnverified,
-    visibleAlternatives,
+    comparisonAlternatives,
   ]);
   const filteredCriteria = useMemo(
     () => filteredGroups.flatMap((group) => group.criteria),
@@ -187,8 +239,32 @@ export default function CategoryMatrixView({
         onShowOnlyDifferencesChange={setShowOnlyDifferences}
         hideUnverified={hideUnverified}
         onHideUnverifiedChange={setHideUnverified}
+        pinnedCount={pinnedCount}
+        focusedOnly={focusedOnly}
+        onFocusedOnlyChange={setFocusedOnly}
+        onClearPins={clearPins}
       />
-      {showEmptyState ? (
+      {focusedEmpty ? (
+        <div
+          className="category-matrix-focused-empty"
+          role="status"
+          data-testid="category-matrix-focused-empty"
+        >
+          <h3 className="category-matrix-focused-empty-title">
+            {t("matrixView.focusedEmptyTitle")}
+          </h3>
+          <p className="category-matrix-focused-empty-body">
+            {t("matrixView.focusedEmptyBody")}
+          </p>
+          <button
+            type="button"
+            className="category-matrix-focused-empty-exit"
+            onClick={exitFocus}
+          >
+            {t("matrixView.exitFocus")}
+          </button>
+        </div>
+      ) : showEmptyState ? (
         <div
           className="category-matrix-toolbar-empty"
           role="status"
@@ -275,44 +351,82 @@ export default function CategoryMatrixView({
                 </tr>
               </thead>
               <tbody>
-                {visibleAlternatives.map((alternative, rowIndex) => (
-                  <tr key={alternative.id}>
-                    <th
-                      scope="row"
-                      className="category-matrix-view-alternative-label"
-                      data-morph-id={
-                        reducedMotion ? undefined : `alt-name-${alternative.id}`
-                      }
-                      style={cellCustomProps(rowIndex, 0)}
-                    >
-                      {alternative.name}
-                    </th>
-                    {filteredCriteria.map((criterion, colIndex) => (
-                      <td
-                        key={criterion.id}
-                        className="category-matrix-view-fact-cell"
-                        style={cellCustomProps(rowIndex, colIndex + 1)}
+                {visibleAlternatives.map((alternative, rowIndex) => {
+                  const isPinned = pinnedIds.has(alternative.id);
+                  const pinLabel = t(
+                    isPinned
+                      ? "matrixView.unpinAction"
+                      : "matrixView.pinAction",
+                    { product: alternative.name },
+                  );
+                  const rowClassName = isPinned
+                    ? "category-matrix-view-row is-pinned"
+                    : "category-matrix-view-row";
+                  return (
+                    <tr key={alternative.id} className={rowClassName}>
+                      <th
+                        scope="row"
+                        className="category-matrix-view-alternative-label"
+                        data-morph-id={
+                          reducedMotion
+                            ? undefined
+                            : `alt-name-${alternative.id}`
+                        }
+                        data-pinned={isPinned ? "true" : "false"}
+                        style={cellCustomProps(rowIndex, 0)}
                       >
-                        <MatrixCell
-                          fact={
-                            alternative.facts[criterion.id] ?? UNVERIFIED_FACT
+                        <span className="category-matrix-view-alternative-name">
+                          {alternative.name}
+                        </span>
+                        {isPinned && (
+                          <span
+                            className="category-matrix-pin-badge"
+                            aria-hidden="true"
+                          >
+                            {t("matrixView.pinnedBadge")}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          aria-pressed={isPinned ? "true" : "false"}
+                          className={
+                            isPinned
+                              ? "category-matrix-pin-button is-pinned"
+                              : "category-matrix-pin-button"
                           }
-                          criterion={criterion}
-                          alternativeId={alternative.id}
-                          alternativeName={alternative.name}
-                          t={t}
-                          language={i18n.language}
-                        />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
+                          onClick={() => togglePin(alternative.id)}
+                        >
+                          {pinLabel}
+                        </button>
+                      </th>
+                      {filteredCriteria.map((criterion, colIndex) => (
+                        <td
+                          key={criterion.id}
+                          className="category-matrix-view-fact-cell"
+                          style={cellCustomProps(rowIndex, colIndex + 1)}
+                        >
+                          <MatrixCell
+                            fact={
+                              alternative.facts[criterion.id] ?? UNVERIFIED_FACT
+                            }
+                            criterion={criterion}
+                            alternativeId={alternative.id}
+                            alternativeName={alternative.name}
+                            t={t}
+                            language={i18n.language}
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
           <MobileMatrixInspector
             groups={filteredGroups}
-            alternatives={visibleAlternatives}
+            alternatives={orderedAlternatives}
+            pinnedAlternatives={pinnedAlternatives}
             t={t}
             language={i18n.language}
           />
@@ -325,6 +439,7 @@ export default function CategoryMatrixView({
 interface MobileMatrixInspectorProps {
   groups: CategoryMatrixApiResponse["data"]["groups"];
   alternatives: CategoryMatrixApiResponse["data"]["alternatives"];
+  pinnedAlternatives?: CategoryMatrixApiResponse["data"]["alternatives"];
   t: TranslateFn;
   language: string;
 }
@@ -351,6 +466,7 @@ export function deriveFocusedAlternativeIds(
 function MobileMatrixInspector({
   groups,
   alternatives,
+  pinnedAlternatives,
   t,
   language,
 }: MobileMatrixInspectorProps) {
@@ -367,59 +483,67 @@ function MobileMatrixInspector({
     alternatives,
   );
 
-  const focusedAlternatives = [
-    alternatives.find((alternative) => alternative.id === primaryId),
-    secondaryId === ""
-      ? undefined
-      : alternatives.find((alternative) => alternative.id === secondaryId),
-  ].filter((alternative): alternative is (typeof alternatives)[number] =>
-    Boolean(alternative),
-  );
+  const usePinned =
+    pinnedAlternatives !== undefined && pinnedAlternatives.length > 0;
+
+  const focusedAlternatives = usePinned
+    ? pinnedAlternatives
+    : ([
+        alternatives.find((alternative) => alternative.id === primaryId),
+        secondaryId === ""
+          ? undefined
+          : alternatives.find((alternative) => alternative.id === secondaryId),
+      ].filter((alternative): alternative is (typeof alternatives)[number] =>
+        Boolean(alternative),
+      ) as CategoryMatrixApiResponse["data"]["alternatives"]);
 
   return (
     <div
       className="category-matrix-mobile-inspector"
       data-testid="category-matrix-mobile-inspector"
+      data-mode={usePinned ? "pinned" : "select"}
     >
-      <div className="category-matrix-mobile-inspector-controls">
-        <label className="category-matrix-mobile-inspector-control">
-          <span className="category-matrix-mobile-inspector-control-label">
-            {primaryLabel}
-          </span>
-          <select
-            className="category-matrix-mobile-inspector-select"
-            aria-label={primaryLabel}
-            value={primaryId}
-            onChange={(event) => setPrimaryId(event.target.value)}
-          >
-            {alternatives.map((alternative) => (
-              <option key={alternative.id} value={alternative.id}>
-                {alternative.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="category-matrix-mobile-inspector-control">
-          <span className="category-matrix-mobile-inspector-control-label">
-            {compareLabel}
-          </span>
-          <select
-            className="category-matrix-mobile-inspector-select"
-            aria-label={compareLabel}
-            value={secondaryId}
-            onChange={(event) => setSecondaryId(event.target.value)}
-          >
-            <option value="">{noSecondaryLabel}</option>
-            {alternatives
-              .filter((alternative) => alternative.id !== primaryId)
-              .map((alternative) => (
+      {!usePinned && (
+        <div className="category-matrix-mobile-inspector-controls">
+          <label className="category-matrix-mobile-inspector-control">
+            <span className="category-matrix-mobile-inspector-control-label">
+              {primaryLabel}
+            </span>
+            <select
+              className="category-matrix-mobile-inspector-select"
+              aria-label={primaryLabel}
+              value={primaryId}
+              onChange={(event) => setPrimaryId(event.target.value)}
+            >
+              {alternatives.map((alternative) => (
                 <option key={alternative.id} value={alternative.id}>
                   {alternative.name}
                 </option>
               ))}
-          </select>
-        </label>
-      </div>
+            </select>
+          </label>
+          <label className="category-matrix-mobile-inspector-control">
+            <span className="category-matrix-mobile-inspector-control-label">
+              {compareLabel}
+            </span>
+            <select
+              className="category-matrix-mobile-inspector-select"
+              aria-label={compareLabel}
+              value={secondaryId}
+              onChange={(event) => setSecondaryId(event.target.value)}
+            >
+              <option value="">{noSecondaryLabel}</option>
+              {alternatives
+                .filter((alternative) => alternative.id !== primaryId)
+                .map((alternative) => (
+                  <option key={alternative.id} value={alternative.id}>
+                    {alternative.name}
+                  </option>
+                ))}
+            </select>
+          </label>
+        </div>
+      )}
       {groups.map((group) => (
         <section
           key={group.id}

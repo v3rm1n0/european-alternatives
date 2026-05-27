@@ -88,8 +88,17 @@
       "emptyBodyWithToggles": "Keine Kriterien entsprechen den aktiven Filtern. Setze die Schalter zurueck oder leere die Suche, um mehr Kriterien zu sehen.",
       "showDifferences": "Nur Unterschiede anzeigen",
       "hideUnverified": "Unbestaetigte ausblenden",
-      "resetToggles": "Schalter zuruecksetzen"
-    }
+      "resetToggles": "Schalter zuruecksetzen",
+      "focusOnly": "Fokus auf Angeheftete",
+      "clearPins": "Anheftungen loeschen",
+      "pinnedCount": "{{count}} angeheftet"
+    },
+    "pinAction": "{{product}} anheften",
+    "unpinAction": "{{product}} loesen",
+    "pinnedBadge": "Angeheftet",
+    "focusedEmptyTitle": "Keine angehefteten Produkte sichtbar",
+    "focusedEmptyBody": "Deine angehefteten Produkte sind ausgefiltert. Verlasse den Fokusmodus, um sie wieder zu sehen.",
+    "exitFocus": "Fokusmodus verlassen"
   },
   "card": {
     "showMore": "Mehr anzeigen",

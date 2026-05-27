@@ -13,6 +13,10 @@ interface CategoryMatrixToolbarProps {
   onShowOnlyDifferencesChange: (next: boolean) => void;
   hideUnverified: boolean;
   onHideUnverifiedChange: (next: boolean) => void;
+  pinnedCount: number;
+  focusedOnly: boolean;
+  onFocusedOnlyChange: (next: boolean) => void;
+  onClearPins: () => void;
 }
 
 export default function CategoryMatrixToolbar({
@@ -26,6 +30,10 @@ export default function CategoryMatrixToolbar({
   onShowOnlyDifferencesChange,
   hideUnverified,
   onHideUnverifiedChange,
+  pinnedCount,
+  focusedOnly,
+  onFocusedOnlyChange,
+  onClearPins,
 }: CategoryMatrixToolbarProps) {
   const { t } = useTranslation("browse");
   const searchLabel = t("matrixView.toolbar.searchLabel");
@@ -36,7 +44,13 @@ export default function CategoryMatrixToolbar({
   const compactLabel = t("matrixView.toolbar.densityCompact");
   const showDifferencesLabel = t("matrixView.toolbar.showDifferences");
   const hideUnverifiedLabel = t("matrixView.toolbar.hideUnverified");
+  const focusOnlyLabel = t("matrixView.toolbar.focusOnly");
+  const clearPinsLabel = t("matrixView.toolbar.clearPins");
+  const pinnedCountLabel = t("matrixView.toolbar.pinnedCount", {
+    count: pinnedCount,
+  });
   const hasQuery = query.trim() !== "";
+  const hasPins = pinnedCount > 0;
 
   return (
     <div className="category-matrix-toolbar">
@@ -111,6 +125,39 @@ export default function CategoryMatrixToolbar({
         >
           {hideUnverifiedLabel}
         </button>
+      </div>
+      <div className="category-matrix-toolbar-pins">
+        <button
+          type="button"
+          aria-pressed={focusedOnly ? "true" : "false"}
+          aria-disabled={hasPins ? undefined : "true"}
+          disabled={!hasPins}
+          className={
+            focusedOnly
+              ? "category-matrix-toolbar-focus is-active"
+              : "category-matrix-toolbar-focus"
+          }
+          onClick={() => onFocusedOnlyChange(!focusedOnly)}
+        >
+          {focusOnlyLabel}
+        </button>
+        {hasPins && (
+          <>
+            <span
+              className="category-matrix-toolbar-pinned-count"
+              aria-live="polite"
+            >
+              {pinnedCountLabel}
+            </span>
+            <button
+              type="button"
+              className="category-matrix-toolbar-clear-pins"
+              onClick={onClearPins}
+            >
+              {clearPinsLabel}
+            </button>
+          </>
+        )}
       </div>
       <div
         className="category-matrix-toolbar-density"
