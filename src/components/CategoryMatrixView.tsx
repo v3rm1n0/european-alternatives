@@ -2,12 +2,16 @@ import type { CSSProperties, ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { sanitizeHref } from "../utils/sanitizeHref";
+import CategoryMatrixToolbar, {
+  type MatrixDensity,
+} from "./CategoryMatrixToolbar";
 import type {
   CategoryMatrixApiResponse,
   MatrixCriterion,
   MatrixCriterionOption,
   MatrixFact,
   MatrixFactValue,
+  MatrixGroup,
 } from "../types";
 
 type TranslateFn = ReturnType<typeof useTranslation<"browse">>["t"];
@@ -35,6 +39,8 @@ export default function CategoryMatrixView({
   visibleAlternativeIds,
   reducedMotion = false,
 }: CategoryMatrixViewProps) {
+  const [query, setQuery] = useState("");
+  const [density, setDensity] = useState<MatrixDensity>("comfortable");
   const { t, i18n } = useTranslation("browse");
   const visibleAlternatives = useMemo(
     () =>
@@ -52,108 +58,185 @@ export default function CategoryMatrixView({
     () => matrix.data.groups.filter((group) => group.criteria.length > 0),
     [matrix.data.groups],
   );
-  const flatCriteria = useMemo(
-    () => groupsWithCriteria.flatMap((group) => group.criteria),
+  const totalCriterionCount = useMemo(
+    () =>
+      groupsWithCriteria.reduce(
+        (count, group) => count + group.criteria.length,
+        0,
+      ),
     [groupsWithCriteria],
   );
+  const tokens = useMemo(
+    () =>
+      query
+        .trim()
+        .toLowerCase()
+        .split(/\s+/u)
+        .filter((token) => token.length > 0),
+    [query],
+  );
+  const isQuerying = tokens.length > 0;
+  const filteredGroups = useMemo<MatrixGroup[]>(() => {
+    if (!isQuerying) {
+      return groupsWithCriteria;
+    }
+    const next: MatrixGroup[] = [];
+    for (const group of groupsWithCriteria) {
+      const groupLabelLower = group.label.toLowerCase();
+      const criteria = group.criteria.filter((criterion) => {
+        const labelLower = criterion.label.toLowerCase();
+        const helpLower = (criterion.helpText ?? "").toLowerCase();
+        return tokens.every(
+          (token) =>
+            labelLower.includes(token) ||
+            helpLower.includes(token) ||
+            groupLabelLower.includes(token),
+        );
+      });
+      if (criteria.length > 0) {
+        next.push({ ...group, criteria });
+      }
+    }
+    return next;
+  }, [groupsWithCriteria, isQuerying, tokens]);
+  const filteredCriteria = useMemo(
+    () => filteredGroups.flatMap((group) => group.criteria),
+    [filteredGroups],
+  );
+  const showEmptyState = isQuerying && filteredCriteria.length === 0;
 
   return (
     <section
       className="category-matrix-view"
       aria-labelledby="category-matrix-view-title"
+      data-density={density}
     >
       <div className="category-matrix-view-header">
         <h2 id="category-matrix-view-title">{title}</h2>
       </div>
       <MatrixLegend t={t} />
-      <div className="category-matrix-view-scroll" tabIndex={0}>
-        <table className="category-matrix-view-table" aria-label={title}>
-          <thead className="category-matrix-view-head">
-            <tr className="category-matrix-view-group-row">
-              <th
-                scope="col"
-                rowSpan={2}
-                className="category-matrix-view-product-header category-matrix-view-corner"
-              >
-                {t("matrixView.productColumn")}
-              </th>
-              {groupsWithCriteria.map((group) => (
-                <th
-                  key={group.id}
-                  scope="colgroup"
-                  colSpan={group.criteria.length}
-                  className="category-matrix-view-group-header"
-                >
-                  <span className="category-matrix-view-group-label">
-                    {group.label}
-                  </span>
-                  {group.description !== null && (
-                    <span className="category-matrix-view-group-description">
-                      {group.description}
-                    </span>
-                  )}
-                </th>
-              ))}
-            </tr>
-            <tr className="category-matrix-view-criterion-row">
-              {flatCriteria.map((criterion) => (
-                <th
-                  key={criterion.id}
-                  scope="col"
-                  className="category-matrix-view-criterion-header"
-                >
-                  <span className="category-matrix-view-criterion-label">
-                    {criterion.label}
-                  </span>
-                  {criterion.helpText !== null && (
-                    <span className="category-matrix-view-criterion-help">
-                      {criterion.helpText}
-                    </span>
-                  )}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {visibleAlternatives.map((alternative, rowIndex) => (
-              <tr key={alternative.id}>
-                <th
-                  scope="row"
-                  className="category-matrix-view-alternative-label"
-                  data-morph-id={
-                    reducedMotion ? undefined : `alt-name-${alternative.id}`
-                  }
-                  style={cellCustomProps(rowIndex, 0)}
-                >
-                  {alternative.name}
-                </th>
-                {flatCriteria.map((criterion, colIndex) => (
-                  <td
-                    key={criterion.id}
-                    className="category-matrix-view-fact-cell"
-                    style={cellCustomProps(rowIndex, colIndex + 1)}
-                  >
-                    <MatrixCell
-                      fact={alternative.facts[criterion.id] ?? UNVERIFIED_FACT}
-                      criterion={criterion}
-                      alternativeId={alternative.id}
-                      alternativeName={alternative.name}
-                      t={t}
-                      language={i18n.language}
-                    />
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <MobileMatrixInspector
-        groups={groupsWithCriteria}
-        alternatives={visibleAlternatives}
-        t={t}
-        language={i18n.language}
+      <CategoryMatrixToolbar
+        query={query}
+        onQueryChange={setQuery}
+        density={density}
+        onDensityChange={setDensity}
+        matchCount={filteredCriteria.length}
+        totalCount={totalCriterionCount}
       />
+      {showEmptyState ? (
+        <div
+          className="category-matrix-toolbar-empty"
+          role="status"
+          data-testid="category-matrix-toolbar-empty"
+        >
+          <h3 className="category-matrix-toolbar-empty-title">
+            {t("matrixView.toolbar.emptyTitle")}
+          </h3>
+          <p className="category-matrix-toolbar-empty-body">
+            {t("matrixView.toolbar.emptyBody")}
+          </p>
+          <button
+            type="button"
+            className="category-matrix-toolbar-empty-clear"
+            onClick={() => setQuery("")}
+          >
+            {t("matrixView.toolbar.clearSearch")}
+          </button>
+        </div>
+      ) : (
+        <>
+          <div className="category-matrix-view-scroll" tabIndex={0}>
+            <table className="category-matrix-view-table" aria-label={title}>
+              <thead className="category-matrix-view-head">
+                <tr className="category-matrix-view-group-row">
+                  <th
+                    scope="col"
+                    rowSpan={2}
+                    className="category-matrix-view-product-header category-matrix-view-corner"
+                  >
+                    {t("matrixView.productColumn")}
+                  </th>
+                  {filteredGroups.map((group) => (
+                    <th
+                      key={group.id}
+                      scope="colgroup"
+                      colSpan={group.criteria.length}
+                      className="category-matrix-view-group-header"
+                    >
+                      <span className="category-matrix-view-group-label">
+                        {group.label}
+                      </span>
+                      {group.description !== null && (
+                        <span className="category-matrix-view-group-description">
+                          {group.description}
+                        </span>
+                      )}
+                    </th>
+                  ))}
+                </tr>
+                <tr className="category-matrix-view-criterion-row">
+                  {filteredCriteria.map((criterion) => (
+                    <th
+                      key={criterion.id}
+                      scope="col"
+                      className="category-matrix-view-criterion-header"
+                    >
+                      <span className="category-matrix-view-criterion-label">
+                        {criterion.label}
+                      </span>
+                      {criterion.helpText !== null && (
+                        <span className="category-matrix-view-criterion-help">
+                          {criterion.helpText}
+                        </span>
+                      )}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {visibleAlternatives.map((alternative, rowIndex) => (
+                  <tr key={alternative.id}>
+                    <th
+                      scope="row"
+                      className="category-matrix-view-alternative-label"
+                      data-morph-id={
+                        reducedMotion ? undefined : `alt-name-${alternative.id}`
+                      }
+                      style={cellCustomProps(rowIndex, 0)}
+                    >
+                      {alternative.name}
+                    </th>
+                    {filteredCriteria.map((criterion, colIndex) => (
+                      <td
+                        key={criterion.id}
+                        className="category-matrix-view-fact-cell"
+                        style={cellCustomProps(rowIndex, colIndex + 1)}
+                      >
+                        <MatrixCell
+                          fact={
+                            alternative.facts[criterion.id] ?? UNVERIFIED_FACT
+                          }
+                          criterion={criterion}
+                          alternativeId={alternative.id}
+                          alternativeName={alternative.name}
+                          t={t}
+                          language={i18n.language}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <MobileMatrixInspector
+            groups={filteredGroups}
+            alternatives={visibleAlternatives}
+            t={t}
+            language={i18n.language}
+          />
+        </>
+      )}
     </section>
   );
 }

@@ -74,6 +74,17 @@
       "primaryLabel": "Primaeres Produkt",
       "compareLabel": "Vergleichen mit",
       "noSecondary": "Kein Vergleich"
+    },
+    "toolbar": {
+      "searchPlaceholder": "Kriterien suchen...",
+      "searchLabel": "Kriterien suchen",
+      "clearSearch": "Kriteriensuche loeschen",
+      "matchCount": "{{matched}} von {{total}} Kriterien",
+      "densityLabel": "Dichte",
+      "densityCompact": "Kompakt",
+      "densityComfortable": "Komfortabel",
+      "emptyTitle": "Keine passenden Kriterien",
+      "emptyBody": "Keine Kriterien entsprechen der aktuellen Suche. Setze die Suche zurueck, um alle Kriterien zu sehen."
     }
   },
   "card": {

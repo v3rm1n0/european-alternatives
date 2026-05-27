@@ -74,6 +74,17 @@
       "primaryLabel": "Primary product",
       "compareLabel": "Compare with",
       "noSecondary": "No comparison"
+    },
+    "toolbar": {
+      "searchPlaceholder": "Search criteria...",
+      "searchLabel": "Search criteria",
+      "clearSearch": "Clear criteria search",
+      "matchCount": "{{matched}} of {{total}} criteria",
+      "densityLabel": "Density",
+      "densityCompact": "Compact",
+      "densityComfortable": "Comfortable",
+      "emptyTitle": "No criteria match",
+      "emptyBody": "No criteria match the current search. Clear the search to see all criteria."
     }
   },
   "card": {
