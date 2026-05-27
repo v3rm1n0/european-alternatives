@@ -33,15 +33,12 @@ import type {
   CategoryMatrixState,
   CountryCode,
   MatrixAlternative,
-  MatrixCriterionFilterSelection,
   MatrixCriterion,
   MatrixCriterionOption,
   MatrixDisplayTone,
   MatrixFact,
   MatrixFactValue,
-  MatrixFilterPrimitive,
   MatrixFilterMode,
-  MatrixFilterSelections,
   MatrixGroup,
   MatrixSemantics,
   MatrixSourceMetadata,
@@ -90,7 +87,6 @@ const matrixFactValues: MatrixFactValue[] = [
   ["web", "desktop"],
   null,
 ];
-const matrixFilterPrimitives: MatrixFilterPrimitive[] = [true, 42, "eu"];
 
 const criterionOption = {
   id: "eu",
@@ -194,34 +190,11 @@ const loadingState = {
   error: null,
 } satisfies CategoryMatrixState;
 
-const booleanFilter = {
-  value: true,
-  includeUnverified: true,
-} satisfies MatrixCriterionFilterSelection;
-
-const multiEnumFilter = {
-  values: ["csv", "json"],
-  includeUnverified: true,
-} satisfies MatrixCriterionFilterSelection;
-
-const rangeFilter = {
-  min: 10,
-  max: 100,
-  includeUnverified: false,
-} satisfies MatrixCriterionFilterSelection;
-
-const matrixFilterSelections = {
-  e2ee: booleanFilter,
-  export_formats: multiEnumFilter,
-  storage_included: rangeFilter,
-} satisfies MatrixFilterSelections;
-
 expectTypeOf(matrixValueTypes).toEqualTypeOf<MatrixValueType[]>();
 expectTypeOf(matrixSemantics).toEqualTypeOf<MatrixSemantics[]>();
 expectTypeOf(matrixFilterModes).toEqualTypeOf<MatrixFilterMode[]>();
 expectTypeOf(matrixDisplayTones).toEqualTypeOf<MatrixDisplayTone[]>();
 expectTypeOf(matrixFactValues).toEqualTypeOf<MatrixFactValue[]>();
-expectTypeOf(matrixFilterPrimitives).toEqualTypeOf<MatrixFilterPrimitive[]>();
 
 expectTypeOf<MatrixValueType>().toEqualTypeOf<
   "boolean" | "enum" | "multi_enum" | "number" | "text" | "url" | "date"
@@ -237,9 +210,6 @@ expectTypeOf<MatrixDisplayTone>().toEqualTypeOf<
 >();
 expectTypeOf<MatrixFactValue>().toEqualTypeOf<
   boolean | number | string | string[] | null
->();
-expectTypeOf<MatrixFilterPrimitive>().toEqualTypeOf<
-  boolean | number | string
 >();
 expectTypeOf<ViewMode>().toEqualTypeOf<"grid" | "list" | "matrix">();
 
@@ -316,16 +286,6 @@ expectTypeOf<MatrixSourceMetadata>().toEqualTypeOf<{
   title?: string;
   accessedDate?: string;
 }>();
-expectTypeOf<MatrixCriterionFilterSelection>().toEqualTypeOf<{
-  value?: MatrixFilterPrimitive;
-  values?: string[];
-  min?: number;
-  max?: number;
-  includeUnverified: boolean;
-}>();
-expectTypeOf<MatrixFilterSelections>().toEqualTypeOf<
-  Record<string, MatrixCriterionFilterSelection>
->();
 expectTypeOf<CategoryMatrixError>().toEqualTypeOf<{
   code: string;
   message: string;
@@ -352,10 +312,6 @@ expectTypeOf(notApplicableFact.value).toEqualTypeOf<null>();
 expectTypeOf(readyLoadResult).toMatchTypeOf<CategoryMatrixLoadResult>();
 expectTypeOf(unavailableLoadResult.error).toMatchTypeOf<CategoryMatrixError>();
 expectTypeOf(loadingState).toMatchTypeOf<CategoryMatrixState>();
-expectTypeOf(booleanFilter.value).toEqualTypeOf<true>();
-expectTypeOf(multiEnumFilter.values).toEqualTypeOf<string[]>();
-expectTypeOf(rangeFilter.includeUnverified).toEqualTypeOf<false>();
-expectTypeOf(matrixFilterSelections).toMatchTypeOf<MatrixFilterSelections>();
 
 // @ts-expect-error auditQuote is intentionally not part of public source metadata.
 void ({ url: "https://example.test", auditQuote: "internal quote" } satisfies MatrixSourceMetadata);

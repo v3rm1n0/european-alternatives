@@ -86,17 +86,6 @@ vi.mock("react-i18next", () => {
     noResultsDesc: "No alternatives match.",
     catalogueComingSoon: "Catalogue coming soon",
     catalogueComingSoonDesc: "Check back soon.",
-    "matrixFilters.title": "Category fit filters",
-    "matrixFilters.subtitle": "{{category}} criteria",
-    "matrixFilters.empty":
-      "No category-specific fit filters are available for this category.",
-    "matrixFilters.loading": "Loading category criteria...",
-    "matrixFilters.error":
-      "Category criteria could not be loaded. Browse results remain available.",
-    "matrixFilters.unverifiedIncludedByDefault":
-      "Unverified results stay visible by default.",
-    "matrixFilters.modes.must_match": "Must match",
-    "matrixFilters.modes.multi_select": "Multi-select",
     "matrixView.title": "{{category}} comparison matrix",
     "matrixView.productColumn": "Product",
     "matrixView.criteriaColumn": "Criterion",
@@ -816,19 +805,19 @@ describe("browse matrix view mode", () => {
     expect(html).not.toContain("category-matrix-filter-panel");
   });
 
-  it("still mounts the category-matrix-filter panel in grid mode when matrix data is loaded", async () => {
+  it("does not mount the category-matrix-filter panel in grid mode even when matrix data is loaded", async () => {
     const html = await renderBrowsePage({
       loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
       search: "category=messaging",
     });
 
-    // Grid mode is unchanged — the panel remains between global filters and
-    // the result cards even when a matrix is loaded for the category.
+    // The filter panel feature is removed — even with a ready matrix loaded
+    // for the active category, grid mode must not render the panel surface.
     expect(html).not.toContain("<table");
-    expect(html).toContain("category-matrix-filter-panel");
+    expect(html).not.toContain("category-matrix-filter-panel");
   });
 
-  it("falls back to grid mode and re-mounts the filter panel when matrix is requested but unavailable", async () => {
+  it("falls back to grid mode without mounting the filter panel when matrix is requested but unavailable", async () => {
     const html = await renderBrowsePage({
       loadedCategoryMatrix: loadedMatrix(
         "messaging",
@@ -839,10 +828,10 @@ describe("browse matrix view mode", () => {
     });
 
     // viewMode=matrix is requested, but the all-unverified gate downgrades
-    // the effective view to grid → the panel must mount again.
+    // the effective view to grid. The filter panel must stay removed.
     expect(browseTestMocks.filterProps[0]?.viewMode).toBe("grid");
     expect(html).not.toContain("<table");
-    expect(html).toContain("category-matrix-filter-panel");
+    expect(html).not.toContain("category-matrix-filter-panel");
   });
 
   it("defines the new product corner-column copy in both browse locales", () => {

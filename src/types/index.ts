@@ -260,21 +260,6 @@ export interface MatrixAlternative {
 
 export type MatrixFactValue = boolean | number | string | string[] | null;
 
-export type MatrixFilterPrimitive = boolean | number | string;
-
-export interface MatrixCriterionFilterSelection {
-  value?: MatrixFilterPrimitive;
-  values?: string[];
-  min?: number;
-  max?: number;
-  includeUnverified: boolean;
-}
-
-export type MatrixFilterSelections = Record<
-  string,
-  MatrixCriterionFilterSelection
->;
-
 export type MatrixFact =
   | VerifiedMatrixFact
   | UnverifiedMatrixFact

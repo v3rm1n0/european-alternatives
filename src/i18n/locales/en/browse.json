@@ -34,30 +34,6 @@
     "pricingTitle": "Pricing",
     "openSourceOnly": "Open Source Only"
   },
-  "matrixFilters": {
-    "title": "Category fit filters",
-    "subtitle": "{{category}} criteria",
-    "loading": "Loading category criteria...",
-    "error": "Category criteria could not be loaded. Browse results remain available.",
-    "empty": "No category-specific fit filters are available for this category.",
-    "any": "Any",
-    "yes": "Yes",
-    "no": "No",
-    "minimum": "Minimum",
-    "maximum": "Maximum",
-    "minimumFor": "Minimum for {{criterion}}",
-    "maximumFor": "Maximum for {{criterion}}",
-    "valuePlaceholder": "Value",
-    "unverified": "Unverified",
-    "includeUnverified": "Include Unverified",
-    "unverifiedIncludedByDefault": "Unverified results stay visible by default.",
-    "modes": {
-      "optional": "Optional",
-      "must_match": "Must match",
-      "range": "Range",
-      "multi_select": "Multi-select"
-    }
-  },
   "matrixView": {
     "title": "{{category}} comparison matrix",
     "criteriaColumn": "Criterion",
