@@ -49,7 +49,27 @@
     "unverified": "Unverified",
     "notApplicable": "Nicht anwendbar",
     "source": "Quelle",
-    "accessedDate": "Abgerufen am {{date}}"
+    "accessedDate": "Abgerufen am {{date}}",
+    "legend": {
+      "title": "Legende",
+      "positive": "Positiv / unterstuetzt",
+      "warning": "Achtung",
+      "negative": "Negativ / nicht unterstuetzt",
+      "neutral": "Neutral / informativ",
+      "tradeoff": "Kompromiss",
+      "unverified": "Unverified",
+      "notApplicable": "Nicht anwendbar"
+    },
+    "popover": {
+      "title": "Zelldetails",
+      "openLabel": "Details fuer {{product}} — {{criterion}} anzeigen",
+      "close": "Schliessen",
+      "product": "Produkt",
+      "criterion": "Kriterium",
+      "value": "Wert",
+      "source": "Quelle",
+      "noSource": "Keine oeffentliche Quelle verfuegbar"
+    }
   },
   "card": {
     "showMore": "Mehr anzeigen",
