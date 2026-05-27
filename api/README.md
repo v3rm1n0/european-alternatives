@@ -76,6 +76,8 @@ Fact cells use a public status and value:
 
 Missing, open, researching, rejected, or otherwise unresolved facts are returned as `{ "status": "unverified", "value": null }`. Facts that do not apply are returned as `{ "status": "not_applicable", "value": null }`. Verified facts expose public source metadata when available, but never audit quotes or raw agent/verifier output.
 
+Facts that have been verified at least once retain their last verified value and public source for the duration of any subsequent recheck. The cell stays `verified` even while the internal pipeline is re-researching or has failed a recheck — the prior value is only replaced when a new verification succeeds. This means the public matrix never flickers to `Unverified` mid-recheck.
+
 Locale fallback: when `locale=de` and no German translation exists for a field, the English value is returned via `COALESCE(column_de, column_en)`.
 
 ### Category Matrix Concepts
@@ -95,8 +97,9 @@ Public fact state is intentionally narrower than internal research state:
 | Internal state                                                                  | Public API/UI state                         |
 | ------------------------------------------------------------------------------- | ------------------------------------------- |
 | `verified`                                                                      | `verified` with the typed value and optional public source metadata |
+| `researching` or `needs-deeper-research` on a fact that was previously verified (recheck in progress or recheck failed) | `verified` with the prior typed value and public source metadata, until a new verification succeeds |
 | `not-applicable`                                                                | `not_applicable` with `value: null`         |
-| Missing fact, `open`, `researching`, `rejected`, `needs-deeper-research`, other unresolved state | `unverified` / `Unverified` with `value: null` |
+| Missing fact, `open`, `researching`, `rejected`, `needs-deeper-research` on a fact that was never verified | `unverified` / `Unverified` with `value: null` |
 
 Public source links may be displayed in normal UI for verified facts. Audit quotes, raw researcher output, raw verifier output, and verifier notes are stored in `matrix_fact_attempts` or `matrix_fact_verifications` for review and audit only; the public matrix API does not return them. In short: public source links are UI-safe, while audit-only quotes and raw agent output are private review records.
 
@@ -174,7 +177,7 @@ Trust scores are dynamically computed on every API request by `api/catalog/scori
 | ------------------------------------ | -------- | ---------------------------------------------------------------------------------------------- |
 | `scripts/db-schema.sql`              | SQL      | Full DDL for all 23 tables (run via `mysql` CLI)                                               |
 | `scripts/db-import.php`              | PHP      | Read `catalog.json`, seed catalog and matrix tables in a single transaction with advisory lock |
-| `scripts/matrix-research-select.php` | PHP      | Select and claim one open or retry matrix fact for the external research loop, with targeting and dry-run support |
+| `scripts/matrix-research-select.php` | PHP      | Select and claim one open, retry, or stale verified matrix fact for the external research loop, with targeting and dry-run support |
 | `scripts/matrix-research-run.mjs`    | Node.js  | Run one `codex` or `claude` researcher against one selected fact, with mock response support   |
 | `scripts/matrix-verify-run.mjs`      | Node.js  | Run three independent `codex` or `claude` verifier slots for one pending attempt, with mock response support |
 | `scripts/matrix-research-persist.php` | PHP     | Persist one research attempt, optional verifier decision, audit rows, and final fact status    |
@@ -187,7 +190,7 @@ Trust scores are dynamically computed on every API request by `api/catalog/scori
 Use the selector when an operator or automation loop needs exactly one open or `needs-deeper-research` matrix fact to research:
 
 ```bash
-php scripts/matrix-research-select.php [--category messaging] [--entry primary-chat] [--criterion e2ee] [--dry-run]
+php scripts/matrix-research-select.php [--category messaging] [--entry primary-chat] [--criterion e2ee] [--include-stale] [--dry-run]
 ```
 
 Target options can be combined:
@@ -195,8 +198,9 @@ Target options can be combined:
 - `--category <category_id>` selects within one matrix category.
 - `--entry <entry_slug>` or `--entry-slug <entry_slug>` selects within one catalog entry.
 - `--criterion <criterion_key>` selects within one criterion key.
+- `--include-stale` also considers verified facts whose selected verification attempt is older than the stale threshold (see [Stale Fact Recheck Policy](#stale-fact-recheck-policy)). Without this flag the selector ignores already-verified facts, regardless of age.
 
-Without target options, the selector chooses the next open fact, then retry facts marked `needs-deeper-research`, across active alternatives. Partial targets choose the next eligible fact within that scope. A real run marks the selected fact as `researching`; `--dry-run` prints the target that would be selected without writing to the database.
+Without target options, the selector chooses the next open fact, then retry facts marked `needs-deeper-research`, across active alternatives. With `--include-stale`, stale verified facts are appended after the retry queue. Partial targets choose the next eligible fact within that scope. A real run marks the selected fact as `researching`; `--dry-run` prints the target that would be selected without writing to the database. When a stale verified fact is claimed for recheck, its prior typed value and public source metadata are preserved on the row so the public API continues to show the cell as `verified` until a new verification succeeds.
 
 Successful selections print JSON to stdout:
 
@@ -224,6 +228,15 @@ In dry-run mode, `dryRun` is `true` and `status` remains the previous fact statu
 | `2`       | No open or retry matrix fact matched the requested scope. The script prints `No open matrix fact available for the requested scope.` to stderr. |
 | `64`      | Invalid CLI usage, such as an unknown option or a missing option value.                                                                |
 | `1`       | Database or unexpected runtime failure.                                                                                                |
+
+### Stale Fact Recheck Policy
+
+Verified matrix facts are not trusted forever. A fact becomes **stale** when its selected verification attempt is older than the configured age threshold and is then eligible for an automated recheck through the normal one-fact pipeline.
+
+- **Threshold:** controlled by the `MATRIX_FACT_STALE_AFTER_DAYS` environment variable. The default is **180 days**. The value is a single positive integer applied globally — there is no per-category or per-criterion override. Invalid or unset values fall back to the default.
+- **Opt-in:** the selector ignores verified facts unless invoked with `--include-stale` (or the loop runner is invoked with `--include-stale`). The stale queue is appended after open and `needs-deeper-research` retry facts, so unverified facts are still drained first.
+- **Recheck contract:** rechecks use the same one-fact / one-researcher / three-independent-verifier pipeline as initial research. The selector claims the stale fact (its status flips to `researching`), the researcher and verifiers run, and the persister settles the outcome.
+- **Value preservation:** a failed recheck — for example, when the original source is no longer accessible or the verifiers do not converge — does **not** erase the previously verified value. The row keeps its prior typed value, public source, and selected attempt ID, and only the status changes (typically to `needs-deeper-research`). The public matrix API continues to render the cell as `verified` until a new verification succeeds. Source-access failure thus moves the fact toward deeper re-research without taking the cell offline.
 
 ### One-Fact Matrix Research Workflow
 
@@ -281,6 +294,7 @@ Options (all opt-in; no implicit defaults are applied when a flag is absent):
 - `--max-runtime MIN` — stop when wall-clock elapsed reaches `MIN` minutes (fractional minutes accepted).
 - `--max-consecutive-failures N` — stop after `N` failed iterations in a row. A successful iteration resets the streak.
 - `--category SLUG` — forwarded to the selector as `--category SLUG` so only facts in that category are processed.
+- `--include-stale` — forwarded to the selector as `--include-stale` so stale verified facts also enter the queue (see [Stale Fact Recheck Policy](#stale-fact-recheck-policy)).
 - `--selector-cmd <cmd>`, `--researcher-cmd <cmd>`, `--verifier-cmd <cmd>`, `--persister-cmd <cmd>` — override the shell command for each stage. Used by tests; production runs leave these unset.
 
 Both `--flag value` and `--flag=value` forms are accepted for every option.

@@ -754,17 +754,25 @@ function settleVerifiedMatrixFact(PDO $pdo, array $attempt, int $attemptId): voi
 
 function settleUnresolvedMatrixFact(PDO $pdo, int $factId, string $status): void
 {
+    // Issue #468: a recheck failure must not erase the prior verified
+    // value. We branch on whether the row already carries a
+    // selected_attempt_id (i.e. a previously verified attempt). The
+    // SQL guards itself row-side so a single UPDATE handles both:
+    //   - First-time failure (selected_attempt_id IS NULL):
+    //       blank value_* / public_source_* / selected_attempt_id, as before.
+    //   - Recheck failure (selected_attempt_id IS NOT NULL):
+    //       keep value_* / public_source_* / selected_attempt_id intact.
+    // Only `status` legitimately changes on a failed recheck.
     $stmt = $pdo->prepare(
         'UPDATE `matrix_facts`
          SET `status` = :status,
-             `value_bool` = NULL,
-             `value_number` = NULL,
-             `value_text` = NULL,
-             `value_json` = NULL,
-             `public_source_url` = NULL,
-             `public_source_title` = NULL,
-             `public_source_accessed_date` = NULL,
-             `selected_attempt_id` = NULL
+             `value_bool` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `value_bool` END,
+             `value_number` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `value_number` END,
+             `value_text` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `value_text` END,
+             `value_json` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `value_json` END,
+             `public_source_url` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `public_source_url` END,
+             `public_source_title` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `public_source_title` END,
+             `public_source_accessed_date` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `public_source_accessed_date` END
          WHERE `id` = :fact_id
            AND `status` = :required_status'
     );

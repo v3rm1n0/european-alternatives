@@ -119,7 +119,23 @@ if (!function_exists('matrixPublicFact')) {
             ];
         }
 
-        if ($status !== 'verified') {
+        // Issue #468: when a fact has a `selected_attempt_id`, it has at some
+        // point in the past been verified. The stale-recheck pipeline may
+        // have transitioned the row to `researching` (mid-recheck) or
+        // `needs-deeper-research` (failed recheck) without erasing the prior
+        // value. Render the stored value as verified for as long as the row
+        // still carries it so the public matrix does not flicker.
+        $selectedAttemptId = $fact['selected_attempt_id'] ?? null;
+        $hasPriorVerifiedValue = $selectedAttemptId !== null
+            && $selectedAttemptId !== ''
+            && (
+                ($fact['value_bool'] ?? null) !== null
+                || ($fact['value_number'] ?? null) !== null
+                || (isset($fact['value_text']) && $fact['value_text'] !== null && $fact['value_text'] !== '')
+                || (isset($fact['value_json']) && $fact['value_json'] !== null && $fact['value_json'] !== '')
+            );
+
+        if ($status !== 'verified' && !$hasPriorVerifiedValue) {
             return [
                 'status' => 'unverified',
                 'value' => null,
@@ -395,6 +411,7 @@ SELECT
     mf.public_source_url,
     mf.public_source_title,
     mf.public_source_accessed_date,
+    mf.selected_attempt_id,
     mc.criterion_key
 FROM matrix_facts mf
 /* MATRIX_FACTS */

@@ -27,6 +27,10 @@ Options:
   --max-runtime MIN                Stop after MIN minutes (fractional ok).
   --max-consecutive-failures N     Stop after N consecutive failed iterations.
   --category SLUG                  Forward --category SLUG to the selector.
+  --include-stale                  Forward --include-stale to the selector so
+                                   verified facts whose selected attempt is
+                                   older than MATRIX_FACT_STALE_AFTER_DAYS
+                                   (default 180) become eligible for recheck.
   --selector-cmd <cmd>             Override the selector shell command.
   --researcher-cmd <cmd>           Override the researcher shell command.
   --verifier-cmd <cmd>             Override the verifier shell command.
@@ -77,6 +81,7 @@ function parseArguments(argv) {
     maxRuntimeMs: null,
     maxConsecutiveFailures: null,
     category: null,
+    includeStale: false,
     selectorCmd: DEFAULT_SELECTOR_CMD,
     researcherCmd: DEFAULT_RESEARCHER_CMD,
     verifierCmd: DEFAULT_VERIFIER_CMD,
@@ -151,6 +156,11 @@ function parseArguments(argv) {
     }
     if (argument.startsWith("--category=")) {
       options.category = argument.slice("--category=".length);
+      continue;
+    }
+
+    if (argument === "--include-stale") {
+      options.includeStale = true;
       continue;
     }
 
@@ -378,6 +388,9 @@ async function runIteration(options, state) {
   const selectorExtraArgs = [];
   if (options.category !== null) {
     selectorExtraArgs.push("--category", options.category);
+  }
+  if (options.includeStale) {
+    selectorExtraArgs.push("--include-stale");
   }
   const selectorCmd = buildShellCommand(options.selectorCmd, selectorExtraArgs);
 
