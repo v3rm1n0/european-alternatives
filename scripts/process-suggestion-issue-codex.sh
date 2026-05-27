@@ -36,7 +36,10 @@ Environment overrides (test seams):
   EUROALT_RESEARCH_ISSUE_CMD    Override stage-1 classifier command.
   EUROALT_RESEARCH_FACT_CMD     Override stage-2 researcher command.
   EUROALT_VERIFY_FACT_CMD       Override stage-3 verifier command.
-  EUROALT_APPLY_VERIFIED_CMD    Override stage-4 apply command.
+  EUROALT_APPLY_VERIFIED_CMD    Override stage-4 apply command (fact-correction).
+  EUROALT_APPLY_NEW_ALT_CMD     Override stage-4 apply command (new_alternative);
+                                if unset, new_alternative still exits 65 with
+                                outcome skipped_not_automated (the default).
   EUROALT_FINALIZE_ISSUE_CMD    Override stage-5 finalizer command.
 USAGE
 }
@@ -107,6 +110,7 @@ RESEARCH_ISSUE_CMD="${EUROALT_RESEARCH_ISSUE_CMD:-bash $SCRIPT_DIR/research-issu
 RESEARCH_FACT_CMD="${EUROALT_RESEARCH_FACT_CMD:-bash $SCRIPT_DIR/research-fact-codex.sh}"
 VERIFY_FACT_CMD="${EUROALT_VERIFY_FACT_CMD:-bash $SCRIPT_DIR/verify-fact-codex.sh}"
 APPLY_VERIFIED_CMD="${EUROALT_APPLY_VERIFIED_CMD:-php $SCRIPT_DIR/apply-verified-action.php}"
+APPLY_NEW_ALT_CMD="${EUROALT_APPLY_NEW_ALT_CMD:-}"
 FINALIZE_ISSUE_CMD="${EUROALT_FINALIZE_ISSUE_CMD:-bash $SCRIPT_DIR/finalize-issue-codex.sh}"
 
 DRY_RUN_FLAG=()
@@ -159,9 +163,11 @@ case "$CLASSIFICATION" in
     catalog_fact_correction)
         ;;
     new_alternative)
-        echo "[issue #${ISSUE_NUMBER}] new_alternative not yet automated; leaving issue untouched" >&2
-        write_result "new_alternative" "no" "skipped_not_automated"
-        exit 65
+        if [[ -z "$APPLY_NEW_ALT_CMD" ]]; then
+            echo "[issue #${ISSUE_NUMBER}] new_alternative not yet automated; leaving issue untouched" >&2
+            write_result "new_alternative" "no" "skipped_not_automated"
+            exit 65
+        fi
         ;;
     unsupported_or_unclear)
         echo "[issue #${ISSUE_NUMBER}] unsupported_or_unclear; leaving issue untouched" >&2
@@ -175,7 +181,7 @@ case "$CLASSIFICATION" in
         ;;
 esac
 
-# Stage 2: research the fact correction --------------------------------------
+# Stage 2: research ----------------------------------------------------------
 echo "[issue #${ISSUE_NUMBER}] stage 2: research-fact"
 set +e
 # shellcheck disable=SC2086
@@ -185,7 +191,7 @@ set -e
 if [[ "$rc" -ne 0 ]]; then
     echo "[issue #${ISSUE_NUMBER}] research-fact failed rc=${rc}" >&2
     cat "$ISSUE_DIR/research-fact.stderr.log" >&2 || true
-    write_result "catalog_fact_correction" "no" "research_failed_rc_${rc}"
+    write_result "$CLASSIFICATION" "no" "research_failed_rc_${rc}"
     exit "$rc"
 fi
 
@@ -199,21 +205,26 @@ set -e
 if [[ "$rc" -ne 0 ]]; then
     echo "[issue #${ISSUE_NUMBER}] verify-fact failed rc=${rc}" >&2
     cat "$ISSUE_DIR/verify-fact.stderr.log" >&2 || true
-    write_result "catalog_fact_correction" "no" "verify_failed_rc_${rc}"
+    write_result "$CLASSIFICATION" "no" "verify_failed_rc_${rc}"
     exit "$rc"
 fi
 
 # Stage 4: apply -------------------------------------------------------------
 echo "[issue #${ISSUE_NUMBER}] stage 4: apply"
+if [[ "$CLASSIFICATION" == "new_alternative" ]]; then
+    APPLY_CMD="$APPLY_NEW_ALT_CMD"
+else
+    APPLY_CMD="$APPLY_VERIFIED_CMD"
+fi
 set +e
 # shellcheck disable=SC2086
-$APPLY_VERIFIED_CMD --verified-action-file "$VERIFIED_FILE" "${DRY_RUN_FLAG[@]}" > "$OUTCOME_FILE" 2> "$ISSUE_DIR/apply.stderr.log"
+$APPLY_CMD --verified-action-file "$VERIFIED_FILE" "${DRY_RUN_FLAG[@]}" > "$OUTCOME_FILE" 2> "$ISSUE_DIR/apply.stderr.log"
 rc=$?
 set -e
 if [[ "$rc" -ne 0 ]]; then
     echo "[issue #${ISSUE_NUMBER}] apply failed rc=${rc}" >&2
     cat "$ISSUE_DIR/apply.stderr.log" >&2 || true
-    write_result "catalog_fact_correction" "no" "apply_failed_rc_${rc}"
+    write_result "$CLASSIFICATION" "no" "apply_failed_rc_${rc}"
     exit "$rc"
 fi
 
@@ -227,14 +238,14 @@ set -e
 if [[ "$rc" -ne 0 ]]; then
     echo "[issue #${ISSUE_NUMBER}] finalize failed rc=${rc}" >&2
     cat "$ISSUE_DIR/finalize.stderr.log" >&2 || true
-    write_result "catalog_fact_correction" "yes" "finalize_failed_rc_${rc}"
+    write_result "$CLASSIFICATION" "yes" "finalize_failed_rc_${rc}"
     exit "$rc"
 fi
 
 if [[ "$DRY_RUN" -eq 1 ]]; then
-    write_result "catalog_fact_correction" "no" "dry_run_applied"
+    write_result "$CLASSIFICATION" "no" "dry_run_applied"
 else
-    write_result "catalog_fact_correction" "yes" "applied"
+    write_result "$CLASSIFICATION" "yes" "applied"
 fi
 echo "[issue #${ISSUE_NUMBER}] done"
 exit 0
