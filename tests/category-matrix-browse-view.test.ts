@@ -500,6 +500,84 @@ function mixedVerificationMatrixResult(): CategoryMatrixLoadResult {
   };
 }
 
+function allNotApplicableMatrixResult(): CategoryMatrixLoadResult {
+  return {
+    status: "ready",
+    matrix: matrix(
+      [
+        {
+          id: "privacy",
+          label: "Privacy",
+          description: null,
+          criteria: [
+            criterion("e2ee", "must_match", {
+              label: "End-to-end encryption",
+              valueType: "boolean",
+            }),
+            criterion("hosting_region", "must_match", {
+              label: "Hosting region",
+              valueType: "enum",
+              options: [
+                { id: "eu", label: "EU hosted", displayTone: "positive" },
+              ],
+            }),
+          ],
+        },
+      ],
+      [
+        matrixAlternative("alpha-chat", "Alpha Chat", {
+          e2ee: { status: "not_applicable", value: null },
+          hosting_region: { status: "not_applicable", value: null },
+        }),
+        matrixAlternative("zeta-chat", "Zeta Chat", {
+          e2ee: { status: "not_applicable", value: null },
+          hosting_region: { status: "not_applicable", value: null },
+        }),
+      ],
+    ),
+    error: null,
+  };
+}
+
+function sparseVerifiedMatrixResult(): CategoryMatrixLoadResult {
+  return {
+    status: "ready",
+    matrix: matrix(
+      [
+        {
+          id: "privacy",
+          label: "Privacy",
+          description: null,
+          criteria: [
+            criterion("e2ee", "must_match", {
+              label: "End-to-end encryption",
+              valueType: "boolean",
+            }),
+            criterion("hosting_region", "must_match", {
+              label: "Hosting region",
+              valueType: "enum",
+              options: [
+                { id: "eu", label: "EU hosted", displayTone: "positive" },
+              ],
+            }),
+          ],
+        },
+      ],
+      [
+        matrixAlternative("alpha-chat", "Alpha Chat", {
+          e2ee: { status: "verified", value: true },
+          hosting_region: { status: "unverified", value: null },
+        }),
+        matrixAlternative("zeta-chat", "Zeta Chat", {
+          e2ee: { status: "unverified", value: null },
+          hosting_region: { status: "not_applicable", value: null },
+        }),
+      ],
+    ),
+    error: null,
+  };
+}
+
 function matrix(
   groups: CategoryMatrixApiResponse["data"]["groups"],
   alternatives: MatrixAlternative[] = [],
@@ -733,6 +811,42 @@ describe("browse matrix view mode", () => {
     expect(browseTestMocks.filterProps[0]?.matrixViewAvailable).toBe(false);
     expect(browseTestMocks.filterProps[0]?.viewMode).toBe("grid");
     expect(html).not.toContain("<table");
+  });
+
+  it("hides matrix mode and falls back to grid when every fact is marked not_applicable", async () => {
+    // A matrix that only contains not_applicable cells has no publicly
+    // researched values to compare — the "first Matrix experience" rule
+    // from #499 treats that as not-yet-ready just like all-unverified.
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix(
+        "messaging",
+        allNotApplicableMatrixResult(),
+      ),
+      search: "category=messaging",
+      viewMode: "matrix",
+    });
+
+    expect(browseTestMocks.filterProps[0]?.matrixViewAvailable).toBe(false);
+    expect(browseTestMocks.filterProps[0]?.viewMode).toBe("grid");
+    expect(html).not.toContain("<table");
+  });
+
+  it("offers matrix mode when only a single fact across the whole category is verified", async () => {
+    // Minimum-sparse case: one verified cell, every other cell is unverified
+    // or not_applicable. The category-level gate must still unlock as soon
+    // as any researched public value exists.
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix(
+        "messaging",
+        sparseVerifiedMatrixResult(),
+      ),
+      search: "category=messaging",
+      viewMode: "matrix",
+    });
+
+    expect(browseTestMocks.filterProps[0]?.matrixViewAvailable).toBe(true);
+    expect(browseTestMocks.filterProps[0]?.viewMode).toBe("matrix");
+    expect(html).toContain("<table");
   });
 
   it("renders boolean verified facts with a verdict color class, inline SVG icon, and localized Yes/No text", async () => {
