@@ -380,6 +380,7 @@ ${slugList || "(none)"}
 
 Per-field constraints (mirror admin/add-alternative.php):
 - slug: lowercase alphanumeric with dots, dashes, or underscores; matches /^[a-z0-9][a-z0-9._-]{0,98}[a-z0-9]$/.
+- country_code: mandatory legal/operator jurisdiction. Verify it from an authoritative source and use one of the valid country codes above. Do not infer it from a TLD, website language, marketing copy, data center/data residency region, issue text, or because the service looks European. If you cannot verify the legal/operator country, fail closed instead of emitting an incomplete newAlternative payload.
 - website_url: https:// preferred; public host only (no localhost, no private/reserved IPs).
 - status: emit "alternative".
 - pricing: one of free, freemium, paid (or null).

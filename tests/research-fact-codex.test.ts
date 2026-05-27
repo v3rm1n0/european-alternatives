@@ -313,6 +313,9 @@ describe("research-fact-codex prompt builders", () => {
     expect(prompt).toContain("Cryptee");
     expect(prompt).toContain("cloud-storage");
     expect(prompt).toContain("ee");
+    expect(prompt).toMatch(/country_code: mandatory legal\/operator jurisdiction/i);
+    expect(prompt).toMatch(/do not infer it from a TLD/i);
+    expect(prompt).toMatch(/fail closed/i);
     expect(prompt).toContain(beginSentinel);
     expect(prompt).toContain(endSentinel);
     expect(prompt).toContain("2026-05-27");
