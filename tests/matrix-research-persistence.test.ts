@@ -912,6 +912,101 @@ describe("matrix research persistence finalizer", () => {
     expectUnrelatedFactsUnchanged(result.state);
   });
 
+  it("persists a rejected outcome when verifier verdicts include contradicts and not-applicable", async () => {
+    const decision: VerificationDecision = {
+      attempt: {
+        factId: 123,
+        status: "needs-verification",
+      },
+      accepted: false,
+      recommendedAttemptStatus: "rejected",
+      recommendedFactStatus: "rejected",
+      countableVerifierCount: 1,
+      verifications: [
+        verificationRecord(1),
+        verificationRecord(2, {
+          verdict: "contradicts",
+          countsTowardAcceptance: false,
+          notes: "The source explicitly contradicts the proposed value.",
+        }),
+        verificationRecord(3, {
+          verdict: "not-applicable",
+          countsTowardAcceptance: false,
+          notes:
+            "The fact does not apply to the offering documented at this source.",
+        }),
+      ],
+    };
+
+    const result = await runPersistence(baseAttempt(), decision);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.payload).toMatchObject({
+      factId: 123,
+      attemptId: 700,
+      factStatus: "rejected",
+      attemptStatus: "rejected",
+      verifierRowsInserted: 3,
+      selectedAttemptId: null,
+    });
+    expect(result.state.transactions).toEqual(["begin", "commit"]);
+    expect(result.state.updates).toEqual([
+      { affected: 1, factId: 123, status: "rejected" },
+    ]);
+
+    expect(factById(result.state, 123)).toMatchObject({
+      status: "rejected",
+      value_bool: null,
+      value_number: null,
+      value_text: null,
+      value_json: null,
+      public_source_url: null,
+      public_source_title: null,
+      public_source_accessed_date: null,
+      selected_attempt_id: null,
+    });
+
+    expect(expectSingleSelectedAttempt(result.state)).toMatchObject({
+      fact_id: 123,
+      status: "rejected",
+      source_url: "https://example.test/element/security",
+      audit_quote: "Private rooms are end-to-end encrypted by default.",
+      raw_response: "researcher raw response",
+    });
+
+    expectSelectedVerifierRows(result.state);
+
+    const contradictsRow = result.state.verifications.find(
+      (row) => row.verifier_index === 2,
+    );
+    expect(contradictsRow, "verifier slot 2 row").toBeDefined();
+    expect(contradictsRow).toMatchObject({
+      attempt_id: 700,
+      verdict: "contradicts",
+      notes: "The source explicitly contradicts the proposed value.",
+      source_url: "https://example.test/element/security-2",
+      audit_quote: "Verifier 2 copied a source quote.",
+    });
+    expect(contradictsRow?.raw_response.length).toBeGreaterThan(0);
+
+    const notApplicableRow = result.state.verifications.find(
+      (row) => row.verifier_index === 3,
+    );
+    expect(notApplicableRow, "verifier slot 3 row").toBeDefined();
+    expect(notApplicableRow).toMatchObject({
+      attempt_id: 700,
+      verdict: "not-applicable",
+      notes:
+        "The fact does not apply to the offering documented at this source.",
+      source_url: "https://example.test/element/security-3",
+      audit_quote: "Verifier 3 copied a source quote.",
+    });
+    expect(notApplicableRow?.raw_response.length).toBeGreaterThan(0);
+
+    expectUnrelatedFactsUnchanged(result.state);
+  });
+
   it("persists failed verifier evidence as a needs-deeper-research retry outcome", async () => {
     const result = await runPersistence(
       baseAttempt(),
