@@ -188,6 +188,16 @@ async function loadTarget(options) {
   return parseJson(await readStdin(), "--target-json-stdin");
 }
 
+export function buildPromptForTarget(target, options = {}) {
+  const promptOptions = {
+    accessedDate: options.accessedDate,
+  };
+  if (target?.previousStatus === "needs-deeper-research") {
+    promptOptions.mode = "deeper-research";
+  }
+  return buildMatrixResearchPrompt(target, promptOptions);
+}
+
 function validateClaimedTarget(target) {
   if (target === null || typeof target !== "object" || Array.isArray(target)) {
     throw new Error("Selected target must be one JSON object");
@@ -258,7 +268,7 @@ async function main(argv) {
 
   validateClaimedTarget(target);
 
-  const prompt = buildMatrixResearchPrompt(target, {
+  const prompt = buildPromptForTarget(target, {
     accessedDate: options.accessedDate,
   });
   const rawResponse =

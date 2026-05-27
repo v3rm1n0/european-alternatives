@@ -170,6 +170,7 @@ function extractSelectorRuntimeSource(source: string): string {
     "parseCliArgs",
     "readRequiredOptionValue",
     "readInlineOptionValue",
+    "readSelectorMode",
     "printUsage",
     "stderr",
     "exitNoOpenFact",
@@ -523,6 +524,13 @@ function matrix_research_selector_test_rows_for_sql(
         if (
             str_contains($normalizedSql, "mf.status = 'open'")
             && ($fact['status'] ?? null) !== 'open'
+        ) {
+            continue;
+        }
+
+        if (
+            str_contains($normalizedSql, "mf.status = 'needs-deeper-research'")
+            && ($fact['status'] ?? null) !== 'needs-deeper-research'
         ) {
             continue;
         }
@@ -924,10 +932,11 @@ describe("matrix research selector contract", () => {
     );
   });
 
-  it("claims a needs-deeper-research fact as an automated retry when no open fact matches", async () => {
+  it("claims a needs-deeper-research fact as an automated retry when --mode=deeper-research is set", async () => {
     const scenario = scenarioWithOnlyNeedsDeeperResearchFact();
     const result = await runSelector(
       [
+        "--mode=deeper-research",
         "--category",
         "email",
         "--entry",

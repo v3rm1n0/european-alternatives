@@ -5,7 +5,15 @@ declare(strict_types=1);
  * Matrix research selector.
  *
  * Usage:
- *   php scripts/matrix-research-select.php [--category <category_id>] [--entry <entry_slug>] [--criterion <criterion_key>] [--include-stale] [--dry-run]
+ *   php scripts/matrix-research-select.php [--mode <initial|deeper-research>] [--category <category_id>] [--entry <entry_slug>] [--criterion <criterion_key>] [--include-stale] [--dry-run]
+ *
+ * Modes:
+ *   initial          Default. Picks only matrix facts whose status is `open`
+ *                    (plus optional verified-stale facts when --include-stale
+ *                    is set). Never picks `needs-deeper-research` facts.
+ *   deeper-research  Picks only `needs-deeper-research` facts whose backoff
+ *                    timestamp (`deeper_research_next_eligible_at`) is in
+ *                    the past or NULL.
  *
  * Exit codes:
  *   0  Selected a matrix fact, or dry-run found the fact that would be selected.
@@ -92,11 +100,12 @@ function runSelector(array $argv): never
 
 /**
  * @param list<string> $argv
- * @return array{category: ?string, entrySlug: ?string, criterion: ?string, includeStale: bool, dryRun: bool, help: bool}
+ * @return array{mode: string, category: ?string, entrySlug: ?string, criterion: ?string, includeStale: bool, dryRun: bool, help: bool}
  */
 function parseCliArgs(array $argv): array
 {
     $options = [
+        'mode' => 'initial',
         'category' => null,
         'entrySlug' => null,
         'criterion' => null,
@@ -125,6 +134,12 @@ function parseCliArgs(array $argv): array
             continue;
         }
 
+        if ($arg === '--mode') {
+            $options['mode'] = readSelectorMode(readRequiredOptionValue($argv, $i, '--mode'));
+            $i++;
+            continue;
+        }
+
         if ($arg === '--category') {
             $options['category'] = readRequiredOptionValue($argv, $i, '--category');
             $i++;
@@ -140,6 +155,11 @@ function parseCliArgs(array $argv): array
         if ($arg === '--criterion') {
             $options['criterion'] = readRequiredOptionValue($argv, $i, '--criterion');
             $i++;
+            continue;
+        }
+
+        if (str_starts_with($arg, '--mode=')) {
+            $options['mode'] = readSelectorMode(readInlineOptionValue($arg, '--mode'));
             continue;
         }
 
@@ -171,6 +191,17 @@ function parseCliArgs(array $argv): array
     }
 
     return $options;
+}
+
+function readSelectorMode(string $value): string
+{
+    if ($value !== 'initial' && $value !== 'deeper-research') {
+        throw new InvalidArgumentException(
+            "--mode must be 'initial' or 'deeper-research'"
+        );
+    }
+
+    return $value;
 }
 
 /**
@@ -214,6 +245,11 @@ Usage:
   php scripts/matrix-research-select.php [options]
 
 Options:
+  --mode <initial|deeper-research>
+                                Select queue. initial (default) picks open
+                                facts only. deeper-research picks
+                                needs-deeper-research facts whose backoff
+                                next_eligible_at is past or NULL.
   --category <category_id>      Select within one matrix category.
   --entry <entry_slug>          Select within one catalog entry.
   --entry-slug <entry_slug>     Alias for --entry.
@@ -222,6 +258,7 @@ Options:
                                 attempt is older than the configured
                                 staleness threshold (env var
                                 MATRIX_FACT_STALE_AFTER_DAYS, default 180).
+                                Only meaningful in --mode=initial.
   --dry-run                     Print the selected target without writing.
   --help                        Show this help.
 
@@ -247,15 +284,20 @@ function exitNoOpenFact(): never
 }
 
 /**
- * @param array{category: ?string, entrySlug: ?string, criterion: ?string, includeStale: bool, dryRun: bool, help: bool} $options
+ * @param array{mode: string, category: ?string, entrySlug: ?string, criterion: ?string, includeStale: bool, dryRun: bool, help: bool} $options
  * @return array<string, mixed>|null
  */
 function selectOpenMatrixFact(PDO $pdo, array $options, bool $forUpdate): ?array
 {
     [$targetSql, $params] = buildTargetFilters($options);
-    $sql = buildSelectionSql($targetSql, $forUpdate, $options['includeStale']);
+    $sql = buildSelectionSql(
+        $targetSql,
+        $forUpdate,
+        $options['mode'],
+        $options['includeStale'],
+    );
 
-    if ($options['includeStale']) {
+    if ($options['mode'] === 'initial' && $options['includeStale']) {
         // Threshold is configurable via MATRIX_FACT_STALE_AFTER_DAYS env var
         // (single global value; default 180 days per issue #468 design).
         $rawStale = getenv('MATRIX_FACT_STALE_AFTER_DAYS');
@@ -282,7 +324,7 @@ function selectOpenMatrixFact(PDO $pdo, array $options, bool $forUpdate): ?array
 }
 
 /**
- * @param array{category: ?string, entrySlug: ?string, criterion: ?string, includeStale: bool, dryRun: bool, help: bool} $options
+ * @param array{mode: string, category: ?string, entrySlug: ?string, criterion: ?string, includeStale: bool, dryRun: bool, help: bool} $options
  * @return array{0: string, 1: array<string, string>}
  */
 function buildTargetFilters(array $options): array
@@ -311,9 +353,49 @@ function buildTargetFilters(array $options): array
     ];
 }
 
-function buildSelectionSql(string $targetSql, bool $forUpdate, bool $includeStale = false): string
-{
+function buildSelectionSql(
+    string $targetSql,
+    bool $forUpdate,
+    string $mode = 'initial',
+    bool $includeStale = false,
+): string {
     $forUpdateClause = $forUpdate ? "\nFOR UPDATE SKIP LOCKED" : '';
+
+    if ($mode === 'deeper-research') {
+        return <<<SQL
+SELECT
+  mf.id AS fact_id,
+  mf.status AS fact_status,
+  mf.category_id,
+  c.name_en AS category_name,
+  ce.slug AS entry_slug,
+  ce.name AS entry_name,
+  mc.criterion_key,
+  mc.label_en AS criterion_label,
+  mc.value_type
+FROM `matrix_facts` mf
+JOIN `catalog_entries` ce ON ce.id = mf.entry_id
+JOIN `categories` c ON c.id = mf.category_id
+JOIN `matrix_criteria` mc ON mc.id = mf.criterion_id
+                         AND mc.category_id = mf.category_id
+WHERE mf.status = 'needs-deeper-research'
+  AND (
+        mf.deeper_research_next_eligible_at IS NULL
+        OR mf.deeper_research_next_eligible_at <= NOW()
+      )
+  AND ce.status = 'alternative'
+  AND ce.is_active = 1{$targetSql}
+ORDER BY
+  c.sort_order ASC,
+  c.id ASC,
+  ce.name ASC,
+  ce.id ASC,
+  mc.sort_order ASC,
+  mc.id ASC,
+  mf.id ASC
+LIMIT 1{$forUpdateClause}
+SQL;
+    }
 
     if ($includeStale) {
         return <<<SQL
@@ -334,7 +416,7 @@ JOIN `matrix_criteria` mc ON mc.id = mf.criterion_id
                          AND mc.category_id = mf.category_id
 LEFT JOIN `matrix_fact_attempts` sa ON sa.id = mf.selected_attempt_id
 WHERE (
-        mf.status IN ('open', 'needs-deeper-research')
+        mf.status = 'open'
         OR (
           mf.status = 'verified'
           AND mf.selected_attempt_id IS NOT NULL
@@ -346,9 +428,8 @@ WHERE (
 ORDER BY
   CASE mf.status
     WHEN 'open' THEN 0
-    WHEN 'needs-deeper-research' THEN 1
-    WHEN 'verified' THEN 2
-    ELSE 3
+    WHEN 'verified' THEN 1
+    ELSE 2
   END ASC,
   c.sort_order ASC,
   c.id ASC,
@@ -377,11 +458,10 @@ JOIN `catalog_entries` ce ON ce.id = mf.entry_id
 JOIN `categories` c ON c.id = mf.category_id
 JOIN `matrix_criteria` mc ON mc.id = mf.criterion_id
                          AND mc.category_id = mf.category_id
-WHERE mf.status IN ('open', 'needs-deeper-research')
+WHERE mf.status = 'open'
   AND ce.status = 'alternative'
   AND ce.is_active = 1{$targetSql}
 ORDER BY
-  CASE mf.status WHEN 'open' THEN 0 ELSE 1 END ASC,
   c.sort_order ASC,
   c.id ASC,
   ce.name ASC,

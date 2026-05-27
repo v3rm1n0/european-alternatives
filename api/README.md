@@ -187,20 +187,25 @@ Trust scores are dynamically computed on every API request by `api/catalog/scori
 
 ### Matrix Research Selector
 
-Use the selector when an operator or automation loop needs exactly one open or `needs-deeper-research` matrix fact to research:
+Use the selector when an operator or automation loop needs exactly one matrix fact to research:
 
 ```bash
-php scripts/matrix-research-select.php [--category messaging] [--entry primary-chat] [--criterion e2ee] [--include-stale] [--dry-run]
+php scripts/matrix-research-select.php [--mode initial|deeper-research] [--category messaging] [--entry primary-chat] [--criterion e2ee] [--include-stale] [--dry-run]
 ```
 
-Target options can be combined:
+Selection mode:
+
+- `--mode initial` (default) picks only `open` matrix facts. `needs-deeper-research` facts are **never** picked in this mode. With `--include-stale`, stale verified facts are appended after the open queue.
+- `--mode deeper-research` picks only `needs-deeper-research` facts whose backoff timer has elapsed (see [Deeper Research Policy](#deeper-research-policy)). Stale verified facts are not eligible in this mode; `--include-stale` has no effect when combined with deeper-research mode.
+
+Target options can be combined with either mode:
 
 - `--category <category_id>` selects within one matrix category.
 - `--entry <entry_slug>` or `--entry-slug <entry_slug>` selects within one catalog entry.
 - `--criterion <criterion_key>` selects within one criterion key.
-- `--include-stale` also considers verified facts whose selected verification attempt is older than the stale threshold (see [Stale Fact Recheck Policy](#stale-fact-recheck-policy)). Without this flag the selector ignores already-verified facts, regardless of age.
+- `--include-stale` (initial mode only) also considers verified facts whose selected verification attempt is older than the stale threshold (see [Stale Fact Recheck Policy](#stale-fact-recheck-policy)). Without this flag the selector ignores already-verified facts, regardless of age.
 
-Without target options, the selector chooses the next open fact, then retry facts marked `needs-deeper-research`, across active alternatives. With `--include-stale`, stale verified facts are appended after the retry queue. Partial targets choose the next eligible fact within that scope. A real run marks the selected fact as `researching`; `--dry-run` prints the target that would be selected without writing to the database. When a stale verified fact is claimed for recheck, its prior typed value and public source metadata are preserved on the row so the public API continues to show the cell as `verified` until a new verification succeeds.
+Partial targets choose the next eligible fact within that scope. A real run marks the selected fact as `researching`; `--dry-run` prints the target that would be selected without writing to the database. When a stale verified fact is claimed for recheck, its prior typed value and public source metadata are preserved on the row so the public API continues to show the cell as `verified` until a new verification succeeds.
 
 Successful selections print JSON to stdout:
 
@@ -225,8 +230,8 @@ In dry-run mode, `dryRun` is `true` and `status` remains the previous fact statu
 | Exit code | Meaning                                                                                                                                |
 | --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `0`       | A fact was selected, or dry-run found the fact that would be selected.                                                                 |
-| `2`       | No open or retry matrix fact matched the requested scope. The script prints `No open matrix fact available for the requested scope.` to stderr. |
-| `64`      | Invalid CLI usage, such as an unknown option or a missing option value.                                                                |
+| `2`       | No matrix fact matched the requested scope and mode. The script prints `No open matrix fact available for the requested scope.` to stderr. |
+| `64`      | Invalid CLI usage, such as an unknown option, an unknown `--mode` value, or a missing option value.                                    |
 | `1`       | Database or unexpected runtime failure.                                                                                                |
 
 ### Stale Fact Recheck Policy
@@ -234,9 +239,30 @@ In dry-run mode, `dryRun` is `true` and `status` remains the previous fact statu
 Verified matrix facts are not trusted forever. A fact becomes **stale** when its selected verification attempt is older than the configured age threshold and is then eligible for an automated recheck through the normal one-fact pipeline.
 
 - **Threshold:** controlled by the `MATRIX_FACT_STALE_AFTER_DAYS` environment variable. The default is **180 days**. The value is a single positive integer applied globally — there is no per-category or per-criterion override. Invalid or unset values fall back to the default.
-- **Opt-in:** the selector ignores verified facts unless invoked with `--include-stale` (or the loop runner is invoked with `--include-stale`). The stale queue is appended after open and `needs-deeper-research` retry facts, so unverified facts are still drained first.
+- **Opt-in:** the selector ignores verified facts unless invoked with `--include-stale` (or the loop runner is invoked with `--include-stale`). The stale queue is appended after open facts, so unverified facts are still drained first. `--include-stale` only applies in initial mode; the deeper-research queue (see [Deeper Research Policy](#deeper-research-policy)) is independent.
 - **Recheck contract:** rechecks use the same one-fact / one-researcher / three-independent-verifier pipeline as initial research. The selector claims the stale fact (its status flips to `researching`), the researcher and verifiers run, and the persister settles the outcome.
 - **Value preservation:** a failed recheck — for example, when the original source is no longer accessible or the verifiers do not converge — does **not** erase the previously verified value. The row keeps its prior typed value, public source, and selected attempt ID, and only the status changes (typically to `needs-deeper-research`). The public matrix API continues to render the cell as `verified` until a new verification succeeds. Source-access failure thus moves the fact toward deeper re-research without taking the cell offline.
+
+### Deeper Research Policy
+
+When initial research cannot resolve a matrix fact — sources disagree, no class 1–5 source qualifies, or verifiers do not converge — the fact settles to `needs-deeper-research` and enters a separate, backoff-gated queue. Deeper-research passes apply stricter source rules and run only when explicitly requested.
+
+- **Explicit selection only.** The default `--mode initial` selector never picks `needs-deeper-research` facts. Use `--mode deeper-research` (selector or loop runner) to drain the deeper-research queue. The normal open-fact queue and the deeper-research queue stay separate.
+- **One fact per invocation.** Deeper research preserves the same one-fact / one-researcher / three-independent-verifier contract as initial research.
+- **Stricter source rules.** Deeper-research prompts forbid class 6 reputable-third-party fallback sources. Only class 1–5 sources may be used; if no class 1–5 source qualifies, the attempt settles back to `needs-deeper-research`.
+- **Backoff schedule (no retry ceiling).** After each `needs-deeper-research` settlement, the fact is suppressed from the deeper-research queue until the backoff window elapses:
+
+  | Failure count | Next eligible after |
+  | ------------- | ------------------- |
+  | 1             | 1 day               |
+  | 2             | 3 days              |
+  | 3             | 7 days              |
+  | 4 and beyond  | 30 days indefinitely |
+
+  Facts are never locked as "unresolvable" by the automated pipeline — the queue stays open forever, just paced.
+- **Audit preserved.** Every attempt, verifier record, and verifier decision is kept. Prior attempt history is never rewritten or deleted across retries.
+- **Reset on success.** When a deeper-research attempt verifies, the fact's backoff counter and next-eligible timestamp reset to zero / NULL.
+- **Public surface unchanged.** A fact in `needs-deeper-research` that was previously verified continues to render as `verified` in the public API with its prior typed value and public source. A fact that has never been verified renders as `Unverified` regardless of its internal deeper-research state.
 
 ### One-Fact Matrix Research Workflow
 
@@ -294,7 +320,8 @@ Options (all opt-in; no implicit defaults are applied when a flag is absent):
 - `--max-runtime MIN` — stop when wall-clock elapsed reaches `MIN` minutes (fractional minutes accepted).
 - `--max-consecutive-failures N` — stop after `N` failed iterations in a row. A successful iteration resets the streak.
 - `--category SLUG` — forwarded to the selector as `--category SLUG` so only facts in that category are processed.
-- `--include-stale` — forwarded to the selector as `--include-stale` so stale verified facts also enter the queue (see [Stale Fact Recheck Policy](#stale-fact-recheck-policy)).
+- `--include-stale` — forwarded to the selector as `--include-stale` so stale verified facts also enter the queue (see [Stale Fact Recheck Policy](#stale-fact-recheck-policy)). Only valid in initial mode.
+- `--mode <initial|deeper-research>` — forwarded to the selector as `--mode <value>`. Defaults to the selector's own default (`initial`). Use `--mode deeper-research` to drive the backoff-gated deeper-research queue (see [Deeper Research Policy](#deeper-research-policy)).
 - `--selector-cmd <cmd>`, `--researcher-cmd <cmd>`, `--verifier-cmd <cmd>`, `--persister-cmd <cmd>` — override the shell command for each stage. Used by tests; production runs leave these unset.
 
 Both `--flag value` and `--flag=value` forms are accepted for every option.

@@ -221,6 +221,8 @@ CREATE TABLE `matrix_facts` (
   `public_source_title`         VARCHAR(500)    DEFAULT NULL,
   `public_source_accessed_date` DATE            DEFAULT NULL,
   `selected_attempt_id`         BIGINT UNSIGNED DEFAULT NULL,
+  `deeper_research_attempt_count`   INT             NOT NULL DEFAULT 0,
+  `deeper_research_next_eligible_at` DATETIME        DEFAULT NULL,
   `created_at`                  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`                  DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -229,6 +231,7 @@ CREATE TABLE `matrix_facts` (
   KEY `ix_mf_category_criterion` (`category_id`, `criterion_id`),
   KEY `ix_mf_status` (`status`),
   KEY `ix_mf_selected_attempt_fact` (`selected_attempt_id`, `id`),
+  KEY `ix_mf_deeper_research_next_eligible_at` (`status`, `deeper_research_next_eligible_at`),
   CONSTRAINT `fk_mf_entry` FOREIGN KEY (`entry_id`) REFERENCES `catalog_entries` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_mf_entry_category` FOREIGN KEY (`entry_id`, `category_id`)
     REFERENCES `entry_categories` (`entry_id`, `category_id`) ON DELETE CASCADE,

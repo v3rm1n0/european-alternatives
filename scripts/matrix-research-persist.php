@@ -713,11 +713,55 @@ function settleMatrixFact(PDO $pdo, array $attempt, int $attemptId, array $outco
 }
 
 /**
+ * Compute the next backoff datetime for a matrix fact entering
+ * needs-deeper-research, given the post-increment attempt count.
+ *
+ * Schedule (issue #471):
+ *   count=1 → +1 day, count=2 → +3 days, count=3 → +7 days,
+ *   count >= 4 → +30 days indefinitely. No retry ceiling.
+ */
+function computeDeeperResearchNextEligibleAt(int $newAttemptCount): string
+{
+    $daysByCount = [1 => 1, 2 => 3, 3 => 7];
+    $days = $daysByCount[$newAttemptCount] ?? 30;
+
+    return (new DateTimeImmutable('now'))
+        ->add(new DateInterval('P' . $days . 'D'))
+        ->format('Y-m-d H:i:s');
+}
+
+/**
+ * Read the current deeper-research attempt count for a fact. Returns 0 if
+ * the fact is missing or the column has no value (fresh row).
+ */
+function readDeeperResearchAttemptCount(PDO $pdo, int $factId): int
+{
+    $stmt = $pdo->prepare(
+        'SELECT `deeper_research_attempt_count` AS attempt_count
+         FROM `matrix_facts`
+         WHERE `id` = :fact_id'
+    );
+    $stmt->execute([':fact_id' => $factId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!is_array($row)) {
+        return 0;
+    }
+
+    $count = $row['attempt_count'] ?? 0;
+
+    return is_numeric($count) ? (int) $count : 0;
+}
+
+/**
  * @param array<string, mixed> $attempt
  */
 function settleVerifiedMatrixFact(PDO $pdo, array $attempt, int $attemptId): void
 {
     $values = typedValueColumns($attempt['proposedValue'] ?? null);
+    // Issue #471: a fact that leaves the deeper-research queue (here, by
+    // becoming verified) resets its backoff bookkeeping — the count/timer
+    // is only meaningful while the fact is still in needs-deeper-research.
     $stmt = $pdo->prepare(
         'UPDATE `matrix_facts`
          SET `status` = :status,
@@ -728,7 +772,9 @@ function settleVerifiedMatrixFact(PDO $pdo, array $attempt, int $attemptId): voi
              `public_source_url` = :public_source_url,
              `public_source_title` = :public_source_title,
              `public_source_accessed_date` = :public_source_accessed_date,
-             `selected_attempt_id` = :selected_attempt_id
+             `selected_attempt_id` = :selected_attempt_id,
+             `deeper_research_attempt_count` = :deeper_research_attempt_count,
+             `deeper_research_next_eligible_at` = :deeper_research_next_eligible_at
          WHERE `id` = :fact_id
            AND `status` = :required_status'
     );
@@ -743,6 +789,8 @@ function settleVerifiedMatrixFact(PDO $pdo, array $attempt, int $attemptId): voi
         ':public_source_title' => $attempt['sourceTitle'] ?? null,
         ':public_source_accessed_date' => $attempt['accessedDate'],
         ':selected_attempt_id' => $attemptId,
+        ':deeper_research_attempt_count' => 0,
+        ':deeper_research_next_eligible_at' => null,
         ':fact_id' => (int) $attempt['factId'],
         ':required_status' => 'researching',
     ]);
@@ -754,6 +802,20 @@ function settleVerifiedMatrixFact(PDO $pdo, array $attempt, int $attemptId): voi
 
 function settleUnresolvedMatrixFact(PDO $pdo, int $factId, string $status): void
 {
+    // Issue #471: when settling a fact into needs-deeper-research, advance
+    // the backoff bookkeeping so the --mode=deeper-research selector path
+    // cools the fact down for 1/3/7/30 days. For any other unresolved
+    // settle (e.g. rejected), leave the backoff columns alone.
+    $isDeeperResearch = $status === 'needs-deeper-research';
+    $newCount = null;
+    $nextEligibleAt = null;
+
+    if ($isDeeperResearch) {
+        $previousCount = readDeeperResearchAttemptCount($pdo, $factId);
+        $newCount = $previousCount + 1;
+        $nextEligibleAt = computeDeeperResearchNextEligibleAt($newCount);
+    }
+
     // Issue #468: a recheck failure must not erase the prior verified
     // value. We branch on whether the row already carries a
     // selected_attempt_id (i.e. a previously verified attempt). The
@@ -763,25 +825,51 @@ function settleUnresolvedMatrixFact(PDO $pdo, int $factId, string $status): void
     //   - Recheck failure (selected_attempt_id IS NOT NULL):
     //       keep value_* / public_source_* / selected_attempt_id intact.
     // Only `status` legitimately changes on a failed recheck.
-    $stmt = $pdo->prepare(
-        'UPDATE `matrix_facts`
-         SET `status` = :status,
-             `value_bool` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `value_bool` END,
-             `value_number` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `value_number` END,
-             `value_text` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `value_text` END,
-             `value_json` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `value_json` END,
-             `public_source_url` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `public_source_url` END,
-             `public_source_title` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `public_source_title` END,
-             `public_source_accessed_date` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `public_source_accessed_date` END
-         WHERE `id` = :fact_id
-           AND `status` = :required_status'
-    );
+    if ($isDeeperResearch) {
+        $stmt = $pdo->prepare(
+            'UPDATE `matrix_facts`
+             SET `status` = :status,
+                 `value_bool` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `value_bool` END,
+                 `value_number` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `value_number` END,
+                 `value_text` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `value_text` END,
+                 `value_json` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `value_json` END,
+                 `public_source_url` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `public_source_url` END,
+                 `public_source_title` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `public_source_title` END,
+                 `public_source_accessed_date` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `public_source_accessed_date` END,
+                 `deeper_research_attempt_count` = :deeper_research_attempt_count,
+                 `deeper_research_next_eligible_at` = :deeper_research_next_eligible_at
+             WHERE `id` = :fact_id
+               AND `status` = :required_status'
+        );
 
-    $stmt->execute([
-        ':status' => $status,
-        ':fact_id' => $factId,
-        ':required_status' => 'researching',
-    ]);
+        $stmt->execute([
+            ':status' => $status,
+            ':deeper_research_attempt_count' => $newCount,
+            ':deeper_research_next_eligible_at' => $nextEligibleAt,
+            ':fact_id' => $factId,
+            ':required_status' => 'researching',
+        ]);
+    } else {
+        $stmt = $pdo->prepare(
+            'UPDATE `matrix_facts`
+             SET `status` = :status,
+                 `value_bool` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `value_bool` END,
+                 `value_number` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `value_number` END,
+                 `value_text` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `value_text` END,
+                 `value_json` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `value_json` END,
+                 `public_source_url` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `public_source_url` END,
+                 `public_source_title` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `public_source_title` END,
+                 `public_source_accessed_date` = CASE WHEN `selected_attempt_id` IS NULL THEN NULL ELSE `public_source_accessed_date` END
+             WHERE `id` = :fact_id
+               AND `status` = :required_status'
+        );
+
+        $stmt->execute([
+            ':status' => $status,
+            ':fact_id' => $factId,
+            ':required_status' => 'researching',
+        ]);
+    }
 
     if ($stmt->rowCount() !== 1) {
         throw new RuntimeException('Selected matrix fact could not be settled.');

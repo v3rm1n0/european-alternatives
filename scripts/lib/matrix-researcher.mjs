@@ -350,13 +350,45 @@ export function formatResearcherCommand(commandConfig) {
 
 export function buildMatrixResearchPrompt(target, options = {}) {
   const accessedDate = options.accessedDate ?? currentUtcDate();
+  const mode = options.mode === "deeper-research" ? "deeper-research" : "initial";
+  const previousAttemptCount =
+    typeof options.previousAttemptCount === "number" &&
+    Number.isFinite(options.previousAttemptCount) &&
+    options.previousAttemptCount > 0
+      ? Math.floor(options.previousAttemptCount)
+      : 0;
+
+  const deeperResearchClause =
+    mode === "deeper-research"
+      ? `
+
+Deeper-research retry context:
+- This is a deeper-research retry of a previously unresolved fact. ${
+          previousAttemptCount > 0
+            ? `There have already been ${previousAttemptCount} earlier attempt(s) that ended in needs-deeper-research.`
+            : "Earlier attempts ended in needs-deeper-research."
+        }
+- The previous attempt did not yield a verifiable answer at the standard source-quality bar. You must raise the bar this time.
+- Class 6 (reputable third-party documentation as fallback) is forbidden in deeper-research mode. Do not use third-party fallback sources; only classes 1–5 are allowed.
+- If no source from classes 1–5 is openable AND quotable, return needs-deeper-research with proposedValue null — do not downgrade to third-party fallback.`
+      : "";
+
+  const sourcePolicy =
+    mode === "deeper-research"
+      ? `Source-quality policy (deeper-research mode):
+- Walk the preferred-source list in order. Stop at the first class (1 through 5) where you can open a page AND copy a short audit quote that directly supports the proposed value.
+- Class 6 reputable-third-party fallback is not allowed in deeper-research mode — do not use it.
+- Do not invent a value and do not pick a source from outside classes 1–5; if no source from any allowed class qualifies, return needs-deeper-research with proposedValue null.`
+      : `Source-quality policy:
+- Walk the preferred-source list in order. Stop at the first class where you can open a page AND copy a short audit quote that directly supports the proposed value.
+- Do not invent a value and do not pick a source from outside the preferred classes; if no source from any preferred class qualifies, return needs-deeper-research with proposedValue null.`;
 
   return `You are researching one selected European Alternatives matrix fact.
 
 Non-negotiable scope:
 - One invocation answers one matrix fact only.
 - Do not answer any other category, entry, product, or criterion.
-- If evidence is unavailable or every useful source is inaccessible, do not invent a value and do not mark the fact as verified.
+- If evidence is unavailable or every useful source is inaccessible, do not invent a value and do not mark the fact as verified.${deeperResearchClause}
 
 Selected fact:
 - factId: ${target.factId}
@@ -384,9 +416,7 @@ Preferred sources, in priority order:
 5. Audited public documentation (third-party audits, transparency reports).
 6. Reputable third-party documentation only as a fallback when no source from classes 1–5 is openable and quotable.
 
-Source-quality policy:
-- Walk the preferred-source list in order. Stop at the first class where you can open a page AND copy a short audit quote that directly supports the proposed value.
-- Do not invent a value and do not pick a source from outside the preferred classes; if no source from any preferred class qualifies, return needs-deeper-research with proposedValue null.
+${sourcePolicy}
 
 Return only this machine-readable JSON inside the fixed sentinels. Do not add any other JSON block.
 

@@ -31,6 +31,11 @@ Options:
                                    verified facts whose selected attempt is
                                    older than MATRIX_FACT_STALE_AFTER_DAYS
                                    (default 180) become eligible for recheck.
+  --mode <initial|deeper-research> Forward --mode to the selector so the loop
+                                   drives the open queue (initial) or the
+                                   deeper-research backlog with backoff
+                                   gating (deeper-research). When omitted
+                                   the selector default applies.
   --selector-cmd <cmd>             Override the selector shell command.
   --researcher-cmd <cmd>           Override the researcher shell command.
   --verifier-cmd <cmd>             Override the verifier shell command.
@@ -75,6 +80,13 @@ function parsePositiveNumber(raw, optionName) {
   return value;
 }
 
+function parseMode(raw) {
+  if (raw !== "initial" && raw !== "deeper-research") {
+    throw new Error("--mode must be 'initial' or 'deeper-research'");
+  }
+  return raw;
+}
+
 function parseArguments(argv) {
   const options = {
     maxFacts: null,
@@ -82,6 +94,7 @@ function parseArguments(argv) {
     maxConsecutiveFailures: null,
     category: null,
     includeStale: false,
+    mode: null,
     selectorCmd: DEFAULT_SELECTOR_CMD,
     researcherCmd: DEFAULT_RESEARCHER_CMD,
     verifierCmd: DEFAULT_VERIFIER_CMD,
@@ -161,6 +174,18 @@ function parseArguments(argv) {
 
     if (argument === "--include-stale") {
       options.includeStale = true;
+      continue;
+    }
+
+    if (argument === "--mode") {
+      options.mode = parseMode(
+        readRequiredOptionValue(argv, index, argument),
+      );
+      index++;
+      continue;
+    }
+    if (argument.startsWith("--mode=")) {
+      options.mode = parseMode(argument.slice("--mode=".length));
       continue;
     }
 
@@ -391,6 +416,9 @@ async function runIteration(options, state) {
   }
   if (options.includeStale) {
     selectorExtraArgs.push("--include-stale");
+  }
+  if (options.mode !== null) {
+    selectorExtraArgs.push(`--mode=${options.mode}`);
   }
   const selectorCmd = buildShellCommand(options.selectorCmd, selectorExtraArgs);
 

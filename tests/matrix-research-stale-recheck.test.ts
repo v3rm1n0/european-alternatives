@@ -965,6 +965,8 @@ function buildPersistenceBehaviorCode(
     "settleMatrixFact",
     "settleVerifiedMatrixFact",
     "settleUnresolvedMatrixFact",
+    "computeDeeperResearchNextEligibleAt",
+    "readDeeperResearchAttemptCount",
     "typedValueColumns",
   ];
 

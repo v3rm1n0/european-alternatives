@@ -255,6 +255,8 @@ function extractPersistenceRuntimeSource(source: string): string {
     "settleMatrixFact",
     "settleVerifiedMatrixFact",
     "settleUnresolvedMatrixFact",
+    "computeDeeperResearchNextEligibleAt",
+    "readDeeperResearchAttemptCount",
     "typedValueColumns",
   ].map((functionName) => getFunctionSource(source, functionName));
 
@@ -511,6 +513,8 @@ final class MatrixResearchPersistenceTestStatement extends PDOStatement
     private array $state;
     private string $sql;
     private int $affectedRows = 0;
+    private array $rows = [];
+    private int $cursor = 0;
 
     public function __construct(array &$state, string $sql)
     {
@@ -541,7 +545,27 @@ final class MatrixResearchPersistenceTestStatement extends PDOStatement
             return true;
         }
 
+        if (str_contains($normalized, 'from matrix_facts')) {
+            $this->rows = matrix_research_persistence_test_select_facts($this->state, $params);
+            $this->cursor = 0;
+            $this->affectedRows = count($this->rows);
+
+            return true;
+        }
+
         throw new RuntimeException('Unexpected SQL in persistence test: ' . $this->sql);
+    }
+
+    public function fetch(
+        int $mode = PDO::FETCH_DEFAULT,
+        int $cursorOrientation = PDO::FETCH_ORI_NEXT,
+        int $cursorOffset = 0,
+    ): mixed {
+        if (!array_key_exists($this->cursor, $this->rows)) {
+            return false;
+        }
+
+        return $this->rows[$this->cursor++];
     }
 
     public function rowCount(): int
@@ -621,6 +645,26 @@ function matrix_research_persistence_test_insert_verification(array &$state, arr
     ];
 
     return 1;
+}
+
+function matrix_research_persistence_test_select_facts(array $state, array $params): array
+{
+    $factId = matrix_research_persistence_test_param($params, 'fact_id');
+    if ($factId === null) {
+        $factId = matrix_research_persistence_test_param($params, 'id');
+    }
+    $rows = [];
+    foreach ($state['facts'] as $fact) {
+        if ($factId !== null && (int) $fact['id'] !== (int) $factId) {
+            continue;
+        }
+        $rows[] = $fact + [
+            'deeper_research_attempt_count' => 0,
+            'attempt_count' => 0,
+            'deeper_research_next_eligible_at' => null,
+        ];
+    }
+    return $rows;
 }
 
 function matrix_research_persistence_test_update_fact(array &$state, string $normalizedSql, array $params): int
