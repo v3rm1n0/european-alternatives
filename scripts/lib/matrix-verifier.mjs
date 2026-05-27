@@ -8,6 +8,7 @@ const VERIFIER_VERDICTS = new Set([
   "contradicts",
   "inconclusive",
   "source-inaccessible",
+  "source-quality-rejected",
   "not-applicable",
 ]);
 const NEEDS_VERIFICATION_STATUS = "needs-verification";
@@ -382,7 +383,10 @@ function normalizeVerification(verificationPayload, options) {
   const notes = normalizeReasoning(verification);
   const sourceTitle = normalizeOptionalSourceTitle(verification.sourceTitle);
 
-  if (verdict === "source-inaccessible") {
+  if (
+    verdict === "source-inaccessible" ||
+    verdict === "source-quality-rejected"
+  ) {
     return {
       verifierIndex,
       verdict,
@@ -530,9 +534,22 @@ Pending attempt to verify:
 
 Verification requirements:
 - Open the researcher's cited source first: ${attempt.sourceUrl}
-- If that page is inaccessible, find an alternative accessible source for the same fact.
-- Return a verdict as one of supports, contradicts, inconclusive, source-inaccessible, or not-applicable.
-- For every verdict except source-inaccessible, include an accessible source URL, accessed date ${accessedDate}, one short audit quote copied from the source, and reasoning.
+- If that page is inaccessible, you may briefly look for an alternative accessible source to confirm the cited URL is genuinely unreachable, but you may only reject — never substitute. Do not substitute a different source URL into a supports verdict. Source substitution is reserved for the researcher on retry.
+- Return a verdict as one of supports, contradicts, inconclusive, source-inaccessible, source-quality-rejected, or not-applicable.
+- Preferred sources, in priority order:
+  1. Official docs / official app pages on the project's own domain.
+  2. The project's source repository (README, SECURITY, docs/ directory, release notes).
+  3. Security whitepapers published by the project or an audited reviewer.
+  4. Standards documents (RFC, ISO, IETF, W3C, EU regulations).
+  5. Audited public documentation (third-party audits, transparency reports).
+  6. Reputable third-party documentation only as a fallback when no source from classes 1–5 is openable and quotable.
+- Use verdict supports only when the cited URL (or, on substitution-by-the-researcher retries, the researcher-provided URL) is from a preferred class AND quotes evidence for the proposed value.
+- Use verdict source-inaccessible when the cited URL cannot be opened at all (404, gated, requires auth, file://, never returns). Quote and accessed date may be null.
+- Use verdict source-quality-rejected when the cited URL was opened but is irrelevant to the fact, insufficient to back the proposed value, yields no quotable statement, or comes from a class weaker than what the fact requires. The fact will bounce to needs-deeper-research so the researcher can find a stronger source on the next pass. Quote and accessed date may be null when the page yields nothing quotable.
+- Use verdict contradicts only when the opened source asserts the opposite of the proposed value.
+- Use verdict inconclusive only when the opened source talks about the fact but neither supports nor contradicts the proposed value.
+- For supports, contradicts, inconclusive, and not-applicable verdicts include an accessible source URL, accessed date ${accessedDate}, one short audit quote copied from the source, and reasoning.
+- Reasoning must explain the verdict; for source-quality-rejected, reasoning must state which preferred class is missing or why the page does not back the fact.
 - If no accessible source can be opened and quoted, return source-inaccessible with reasoning; it does not count.
 
 Return only this machine-readable JSON inside the fixed sentinels. Do not add any other JSON block.

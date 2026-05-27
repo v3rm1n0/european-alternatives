@@ -73,6 +73,7 @@ type VerificationRecord = {
     | "contradicts"
     | "inconclusive"
     | "source-inaccessible"
+    | "source-quality-rejected"
     | "not-applicable";
   notes: string;
   countsTowardAcceptance: boolean;
@@ -234,6 +235,28 @@ describe("matrix verifier contract", () => {
     expect(prompt).not.toContain("BEGIN_MATRIX_FACT_RESEARCH_JSON");
   });
 
+  it("teaches the verifier the preferred source classes and forbids URL substitution", async () => {
+    const { buildMatrixVerificationPrompt } = await loadVerifierModule();
+
+    const prompt = buildMatrixVerificationPrompt(
+      selectedTarget,
+      pendingAttempt,
+      { verifierIndex: 1, accessedDate: "2026-05-25" },
+    );
+
+    expect(prompt).toMatch(/preferred sources/i);
+    expect(prompt).toMatch(/official (docs|documentation)/i);
+    expect(prompt).toMatch(/(source repository|project's source repository)/i);
+    expect(prompt).toMatch(/security whitepaper/i);
+    expect(prompt).toMatch(/standards? document/i);
+    expect(prompt).toMatch(/audited public documentation/i);
+    expect(prompt).toMatch(/reputable third-party documentation/i);
+    expect(prompt).toMatch(/source-quality-rejected/);
+    expect(prompt).toMatch(
+      /(do not substitute|never substitute|do not swap|may only reject).*(source|url)/is,
+    );
+  });
+
   it("parses a supporting verifier output into a countable verification record", async () => {
     const { parseMatrixVerificationResponse } = await loadVerifierModule();
     const rawResponse = modelResponse(validPayload(1));
@@ -301,6 +324,138 @@ describe("matrix verifier contract", () => {
       notes:
         "The cited source and no alternative accessible source could be opened.",
     });
+  });
+
+  it("records a source-quality-rejected verdict as non-counting evidence with notes", async () => {
+    const { parseMatrixVerificationResponse } = await loadVerifierModule();
+
+    const record = parseMatrixVerificationResponse(
+      modelResponse(
+        validPayload(2, {
+          verdict: "source-quality-rejected",
+          sourceUrl: pendingAttempt.sourceUrl,
+          sourceTitle: "Random third-party blog",
+          auditQuote:
+            "Element is a great chat app and we love using it every day.",
+          reasoning:
+            "Cited page is a third-party blog post; no official-class source supports the proposed value.",
+        }),
+      ),
+      selectedTarget,
+      pendingAttempt,
+      {
+        verifierIndex: 2,
+        agent: "codex",
+        command: "codex exec",
+      },
+    );
+
+    expect(record).toMatchObject({
+      factId: 123,
+      verifierIndex: 2,
+      verdict: "source-quality-rejected",
+      sourceUrl: pendingAttempt.sourceUrl,
+      countsTowardAcceptance: false,
+    });
+    expect(record.notes).toMatch(/third-party|official|no.*source|insufficient/i);
+  });
+
+  it("allows a quote-less source-quality-rejected record when the page yields nothing quotable", async () => {
+    const { parseMatrixVerificationResponse } = await loadVerifierModule();
+
+    const record = parseMatrixVerificationResponse(
+      modelResponse(
+        validPayload(3, {
+          verdict: "source-quality-rejected",
+          sourceUrl: pendingAttempt.sourceUrl,
+          sourceTitle: null,
+          auditQuote: null,
+          reasoning:
+            "The opened page does not contain any quotable statement about the selected fact.",
+        }),
+      ),
+      selectedTarget,
+      pendingAttempt,
+      {
+        verifierIndex: 3,
+        agent: "codex",
+        command: "codex exec",
+      },
+    );
+
+    expect(record.verdict).toBe("source-quality-rejected");
+    expect(record.countsTowardAcceptance).toBe(false);
+    expect(record.auditQuote).toBeNull();
+    expect(record.notes).toMatch(/quotable|quote|statement/i);
+  });
+
+  it("allows a source-quality-rejected record with every source field nulled", async () => {
+    const { parseMatrixVerificationResponse } = await loadVerifierModule();
+
+    const record = parseMatrixVerificationResponse(
+      modelResponse(
+        validPayload(2, {
+          verdict: "source-quality-rejected",
+          sourceUrl: null,
+          sourceTitle: null,
+          accessedDate: null,
+          auditQuote: null,
+          reasoning:
+            "No preferred-class source opened or quoted; rejecting the cited URL entirely.",
+        }),
+      ),
+      selectedTarget,
+      pendingAttempt,
+      {
+        verifierIndex: 2,
+        agent: "codex",
+        command: "codex exec",
+      },
+    );
+
+    expect(record).toMatchObject({
+      factId: 123,
+      verifierIndex: 2,
+      verdict: "source-quality-rejected",
+      sourceUrl: null,
+      sourceTitle: null,
+      accessedDate: null,
+      auditQuote: null,
+      countsTowardAcceptance: false,
+    });
+    expect(record.notes).toMatch(/preferred|rejecting|source/i);
+  });
+
+  it("rejects a source-quality-rejected payload with no rejection reason", async () => {
+    const { parseMatrixVerificationResponse } = await loadVerifierModule();
+    const buildResponse = (reasoningOverride: Record<string, unknown>) =>
+      modelResponse(
+        validPayload(1, {
+          verdict: "source-quality-rejected",
+          sourceUrl: pendingAttempt.sourceUrl,
+          sourceTitle: null,
+          auditQuote: null,
+          ...reasoningOverride,
+        }),
+      );
+
+    for (const reasoningOverride of [
+      { reasoning: "" },
+      { reasoning: "   " },
+    ]) {
+      expect(() =>
+        parseMatrixVerificationResponse(
+          buildResponse(reasoningOverride),
+          selectedTarget,
+          pendingAttempt,
+          {
+            verifierIndex: 1,
+            agent: "codex",
+            command: "codex exec",
+          },
+        ),
+      ).toThrow(/reasoning/i);
+    }
   });
 
   it("validates pending verification inputs before verifier execution", async () => {
@@ -519,6 +674,154 @@ describe("matrix verifier contract", () => {
       expect(decision.recommendedFactStatus).toBe("needs-deeper-research");
       expect(decision.countableVerifierCount).toBeLessThan(3);
       expect(decision.reason).toMatch(/three|3|countable|independent/i);
+    }
+  });
+
+  it("bounces the attempt to needs-deeper-research when any slot returns source-quality-rejected", async () => {
+    const { decideMatrixVerificationOutcome, parseMatrixVerificationResponse } =
+      await loadVerifierModule();
+    const supports = [1, 2].map((verifierIndex) =>
+      parseMatrixVerificationResponse(
+        modelResponse(validPayload(verifierIndex)),
+        selectedTarget,
+        pendingAttempt,
+        { verifierIndex, agent: "codex", command: "codex exec" },
+      ),
+    );
+    const qualityRejected = parseMatrixVerificationResponse(
+      modelResponse(
+        validPayload(3, {
+          verdict: "source-quality-rejected",
+          sourceUrl: pendingAttempt.sourceUrl,
+          auditQuote: null,
+          reasoning:
+            "Cited page is a third-party blog; no official-class source confirms the proposed value.",
+        }),
+      ),
+      selectedTarget,
+      pendingAttempt,
+      { verifierIndex: 3, agent: "codex", command: "codex exec" },
+    );
+
+    const decision = decideMatrixVerificationOutcome(pendingAttempt, [
+      ...supports,
+      qualityRejected,
+    ]);
+
+    expect(decision.accepted).toBe(false);
+    expect(decision.recommendedAttemptStatus).toBe("needs-deeper-research");
+    expect(decision.recommendedFactStatus).toBe("needs-deeper-research");
+    expect(decision.countableVerifierCount).toBeLessThan(3);
+  });
+
+  it("exercises the five required verifier scenarios for source quality", async () => {
+    const { decideMatrixVerificationOutcome, parseMatrixVerificationResponse } =
+      await loadVerifierModule();
+    const scenarios = [
+      {
+        name: "official source success",
+        verifierIndex: 1,
+        overrides: {
+          verdict: "supports",
+          sourceUrl: "https://element.io/docs/security",
+          sourceTitle: "Element official security documentation",
+          auditQuote: "Private rooms are end-to-end encrypted by default.",
+          reasoning:
+            "Official documentation on the project's own domain supports the proposed value.",
+        },
+        expectedCountable: true,
+        expectedVerdict: "supports",
+      },
+      {
+        name: "alternative accessible source success",
+        verifierIndex: 1,
+        overrides: {
+          verdict: "supports",
+          sourceUrl: "https://github.com/element-hq/element-web/blob/main/SECURITY.md",
+          sourceTitle: "Element source repository SECURITY.md",
+          auditQuote:
+            "End-to-end encryption is enabled by default for private rooms.",
+          reasoning:
+            "Project source repository security policy file supports the proposed value.",
+        },
+        expectedCountable: true,
+        expectedVerdict: "supports",
+      },
+      {
+        name: "inaccessible source",
+        verifierIndex: 1,
+        overrides: {
+          verdict: "source-inaccessible",
+          sourceUrl: pendingAttempt.sourceUrl,
+          sourceTitle: null,
+          auditQuote: null,
+          reasoning:
+            "The cited URL responded with 404 and no alternative accessible source for this fact was reachable.",
+        },
+        expectedCountable: false,
+        expectedVerdict: "source-inaccessible",
+      },
+      {
+        name: "irrelevant accessible source",
+        verifierIndex: 1,
+        overrides: {
+          verdict: "source-quality-rejected",
+          sourceUrl: pendingAttempt.sourceUrl,
+          sourceTitle: "Element press release",
+          auditQuote:
+            "Element raises Series B funding to accelerate global rollout.",
+          reasoning:
+            "The cited page is a press release about funding and does not address the encryption claim.",
+        },
+        expectedCountable: false,
+        expectedVerdict: "source-quality-rejected",
+      },
+      {
+        name: "quote-less source",
+        verifierIndex: 1,
+        overrides: {
+          verdict: "source-quality-rejected",
+          sourceUrl: pendingAttempt.sourceUrl,
+          sourceTitle: null,
+          auditQuote: null,
+          reasoning:
+            "The opened page contains no quotable statement about end-to-end encryption.",
+        },
+        expectedCountable: false,
+        expectedVerdict: "source-quality-rejected",
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const record = parseMatrixVerificationResponse(
+        modelResponse(validPayload(scenario.verifierIndex, scenario.overrides)),
+        selectedTarget,
+        pendingAttempt,
+        {
+          verifierIndex: scenario.verifierIndex,
+          agent: "codex",
+          command: "codex exec",
+        },
+      );
+
+      expect(record.verdict, scenario.name).toBe(scenario.expectedVerdict);
+      expect(record.countsTowardAcceptance, scenario.name).toBe(
+        scenario.expectedCountable,
+      );
+      expect(record.notes, scenario.name).not.toBe("");
+
+      if (!scenario.expectedCountable) {
+        const decision = decideMatrixVerificationOutcome(pendingAttempt, [
+          record,
+          record,
+          record,
+        ]);
+
+        expect(decision.accepted, scenario.name).toBe(false);
+        expect(decision.recommendedAttemptStatus, scenario.name).toBe(
+          "needs-deeper-research",
+        );
+      }
     }
   });
 

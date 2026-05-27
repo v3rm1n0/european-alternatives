@@ -278,7 +278,7 @@ CREATE TABLE `matrix_fact_verifications` (
   `source_title`   VARCHAR(500)    DEFAULT NULL,
   `accessed_date`  DATE            DEFAULT NULL,
   `audit_quote`    TEXT            DEFAULT NULL,
-  `verdict`        ENUM('supports','contradicts','inconclusive','source-inaccessible','not-applicable') NOT NULL,
+  `verdict`        ENUM('supports','contradicts','inconclusive','source-inaccessible','source-quality-rejected','not-applicable') NOT NULL,
   `notes`          TEXT            DEFAULT NULL,
   `raw_response`   LONGTEXT        DEFAULT NULL,
   `created_at`     DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,

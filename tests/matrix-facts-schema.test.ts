@@ -278,6 +278,7 @@ describe("matrix fact database schema", () => {
       "contradicts",
       "inconclusive",
       "source-inaccessible",
+      "source-quality-rejected",
       "not-applicable",
     ]);
     expectColumn(verifications, "notes", /TEXT\s+DEFAULT NULL/);

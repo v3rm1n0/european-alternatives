@@ -376,6 +376,18 @@ Evidence requirements:
 - Include one short audit quote copied from the source. The audit quote is for verification only, not public UI copy.
 - Include confidence as one of high, medium, or low.
 
+Preferred sources, in priority order:
+1. Official docs / official app pages on the project's own domain.
+2. The project's source repository (README, SECURITY, docs/ directory, release notes).
+3. Security whitepapers published by the project or an audited reviewer.
+4. Standards documents (RFC, ISO, IETF, W3C, EU regulations).
+5. Audited public documentation (third-party audits, transparency reports).
+6. Reputable third-party documentation only as a fallback when no source from classes 1–5 is openable and quotable.
+
+Source-quality policy:
+- Walk the preferred-source list in order. Stop at the first class where you can open a page AND copy a short audit quote that directly supports the proposed value.
+- Do not invent a value and do not pick a source from outside the preferred classes; if no source from any preferred class qualifies, return needs-deeper-research with proposedValue null.
+
 Return only this machine-readable JSON inside the fixed sentinels. Do not add any other JSON block.
 
 ${MATRIX_RESEARCH_BEGIN_SENTINEL}

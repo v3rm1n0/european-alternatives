@@ -161,6 +161,27 @@ describe("matrix one-fact researcher contract", () => {
     expect(prompt).toContain(endSentinel);
   });
 
+  it("ranks preferred source classes and tells the researcher to bounce when none qualify", async () => {
+    const { buildMatrixResearchPrompt } = await loadResearcherModule();
+
+    const prompt = buildMatrixResearchPrompt(selectedTarget, {
+      accessedDate: "2026-05-25",
+    });
+
+    expect(prompt).toMatch(/preferred sources/i);
+    expect(prompt).toMatch(/official (docs|documentation)/i);
+    expect(prompt).toMatch(/(source repository|project's source repository)/i);
+    expect(prompt).toMatch(/security whitepaper/i);
+    expect(prompt).toMatch(/standards? document/i);
+    expect(prompt).toMatch(/audited public documentation/i);
+    expect(prompt).toMatch(/reputable third-party documentation/i);
+    expect(prompt).toMatch(/(fallback|only when no official|in that order)/i);
+    expect(prompt).toMatch(
+      /(needs-deeper-research|do not invent).*(preferred|qualify|class)/is,
+    );
+    expect(prompt).toMatch(/quote/i);
+  });
+
   it("exposes explicit codex and claude researcher command configurations without embedding prompt text", async () => {
     const { getResearcherCommand } = await loadResearcherModule();
 

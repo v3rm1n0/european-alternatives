@@ -900,6 +900,64 @@ describe("matrix research persistence finalizer", () => {
     expectUnrelatedFactsUnchanged(result.state);
   });
 
+  it("persists a source-quality-rejected verification and bounces the fact to needs-deeper-research", async () => {
+    const decision: VerificationDecision = {
+      attempt: {
+        factId: 123,
+        status: "needs-verification",
+      },
+      accepted: false,
+      recommendedAttemptStatus: "needs-deeper-research",
+      recommendedFactStatus: "needs-deeper-research",
+      countableVerifierCount: 2,
+      verifications: [
+        verificationRecord(1),
+        verificationRecord(2),
+        verificationRecord(3, {
+          verdict: "source-quality-rejected",
+          sourceUrl: "https://example.test/element/security",
+          sourceTitle: "Random third-party blog",
+          auditQuote:
+            "Element is a great chat app and we love using it every day.",
+          notes:
+            "Cited page is a third-party blog post; no official-class source supports the proposed value.",
+          countsTowardAcceptance: false,
+        }),
+      ],
+    };
+
+    const result = await runPersistence(baseAttempt(), decision);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.payload).toMatchObject({
+      factId: 123,
+      attemptId: 700,
+      factStatus: "needs-deeper-research",
+      attemptStatus: "needs-deeper-research",
+      verifierRowsInserted: 3,
+      selectedAttemptId: null,
+    });
+
+    expect(factById(result.state, 123)).toMatchObject({
+      status: "needs-deeper-research",
+      value_bool: null,
+      public_source_url: null,
+      selected_attempt_id: null,
+    });
+
+    const qualityRow = result.state.verifications.find(
+      (row) => row.verifier_index === 3,
+    );
+
+    expect(qualityRow, "verifier slot 3 row").toBeDefined();
+    expect(qualityRow).toMatchObject({
+      verdict: "source-quality-rejected",
+    });
+    expect(qualityRow?.notes).toMatch(/third-party|official|no.*source/i);
+    expectUnrelatedFactsUnchanged(result.state);
+  });
+
   it("persists no-evidence researcher attempts without verifier rows", async () => {
     const result = await runPersistence(
       baseAttempt({
