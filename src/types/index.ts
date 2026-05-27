@@ -382,6 +382,7 @@ export interface LandingCategoryGroup {
 export type SortBy = "trustScore" | "name" | "country" | "category";
 export type CardViewMode = "grid" | "list";
 export type ViewMode = CardViewMode | "matrix";
+export type ResultMode = "browse" | "matrix";
 
 export interface SelectedFilters {
   category: CategoryId[];

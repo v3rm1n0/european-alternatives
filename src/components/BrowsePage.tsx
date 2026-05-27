@@ -7,6 +7,7 @@ import { useCatalog } from "../contexts/CatalogContext";
 import AlternativeCard from "./AlternativeCard";
 import Filters from "./Filters";
 import CategoryMatrixView from "./CategoryMatrixView";
+import ResultModeSwitch from "./ResultModeSwitch";
 import { fetchCategoryMatrix } from "../data/categoryMatrix";
 import { getLocalizedAlternativeDescription } from "../utils/alternativeText";
 import { getAlternativeCategories } from "../utils/alternativeCategories";
@@ -17,9 +18,9 @@ import type {
   CategoryMatrixLoadResult,
   CategoryMatrixState,
   CountryCode,
+  ResultMode,
   SelectedFilters,
   SortBy,
-  ViewMode,
 } from "../types";
 
 interface LoadedCategoryMatrix {
@@ -53,6 +54,8 @@ export default function BrowsePage() {
   }, [setSearchParams]);
 
   const searchTerm = searchParams.get("q") ?? "";
+  const requestedResultMode: ResultMode =
+    searchParams.get("view") === "matrix" ? "matrix" : "browse";
   const categoryFilters = useMemo(
     () =>
       searchParams
@@ -70,7 +73,7 @@ export default function BrowsePage() {
   const [pricingFilters, setPricingFilters] = useState<string[]>([]);
   const [openSourceOnly, setOpenSourceOnly] = useState(false);
   const [sortBy, setSortBy] = useState<SortBy>("trustScore");
-  const [viewMode, setViewMode] = useState<ViewMode>("grid");
+  const [browseLayout, setBrowseLayout] = useState<CardViewMode>("grid");
   const [expandedCardIds, setExpandedCardIds] = useState<Set<string>>(
     new Set(),
   );
@@ -237,11 +240,11 @@ export default function BrowsePage() {
           for (const category of nextCategories) {
             params.append("category", category);
           }
+          if (nextMatrixCategory !== matrixCategory) {
+            params.delete("view");
+          }
           latestParamsRef.current = params;
           setSearchParamsRef.current(params, { replace: true });
-          if (nextMatrixCategory !== matrixCategory) {
-            setViewMode("grid");
-          }
           break;
         }
         case "country":
@@ -269,7 +272,18 @@ export default function BrowsePage() {
     setCountryFilters([]);
     setPricingFilters([]);
     setOpenSourceOnly(false);
-    setViewMode("grid");
+    setBrowseLayout("grid");
+  }, []);
+
+  const handleResultModeChange = useCallback((nextMode: ResultMode) => {
+    const params = new URLSearchParams(latestParamsRef.current);
+    if (nextMode === "matrix") {
+      params.set("view", "matrix");
+    } else {
+      params.delete("view");
+    }
+    latestParamsRef.current = params;
+    setSearchParamsRef.current(params, { replace: true });
   }, []);
 
   const filteredAlternatives = useMemo(() => {
@@ -357,11 +371,10 @@ export default function BrowsePage() {
     () => new Set(filteredAlternatives.map((alternative) => alternative.id)),
     [filteredAlternatives],
   );
-  const effectiveViewMode: ViewMode =
-    viewMode === "matrix" && !matrixViewAvailable ? "grid" : viewMode;
-  const cardViewMode: CardViewMode =
-    effectiveViewMode === "list" ? "list" : "grid";
-  const showMatrixView = effectiveViewMode === "matrix" && matrixViewAvailable;
+  const effectiveResultMode: ResultMode =
+    requestedResultMode === "matrix" && matrixViewAvailable ? "matrix" : "browse";
+  const cardViewMode: CardViewMode = browseLayout;
+  const showMatrixView = effectiveResultMode === "matrix";
 
   const expandedAlternatives = useMemo(
     () => filteredAlternatives.filter((alt) => expandedCardIds.has(alt.id)),
@@ -422,11 +435,17 @@ export default function BrowsePage() {
           onClearAll={handleClearAll}
           sortBy={sortBy}
           onSortChange={setSortBy}
-          viewMode={effectiveViewMode}
-          onViewModeChange={setViewMode}
+          viewMode={browseLayout}
+          onViewModeChange={setBrowseLayout}
           totalCount={alternatives.length}
           filteredCount={filteredAlternatives.length}
           matrixViewAvailable={matrixViewAvailable}
+        />
+
+        <ResultModeSwitch
+          mode={effectiveResultMode}
+          onChange={handleResultModeChange}
+          matrixAvailable={matrixViewAvailable}
         />
 
         {filteredAlternatives.length > 0 ? (

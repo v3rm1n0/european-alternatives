@@ -242,8 +242,19 @@ async function renderBrowsePage(
   browseTestMocks.language = options.language ?? "en";
   browseTestMocks.loadedCategoryMatrix =
     options.loadedCategoryMatrix ?? undefined;
-  browseTestMocks.search = options.search ?? "";
-  browseTestMocks.viewMode = options.viewMode ?? "grid";
+
+  const requestedViewMode = options.viewMode ?? "grid";
+  if (requestedViewMode === "matrix") {
+    const params = new URLSearchParams(options.search ?? "");
+    if (!params.has("view")) {
+      params.set("view", "matrix");
+    }
+    browseTestMocks.search = params.toString();
+    browseTestMocks.viewMode = "grid";
+  } else {
+    browseTestMocks.search = options.search ?? "";
+    browseTestMocks.viewMode = requestedViewMode;
+  }
 
   const browseModule = (await import("../src/components/BrowsePage")) as {
     default: ComponentType;
@@ -845,7 +856,7 @@ describe("browse matrix view mode", () => {
     });
 
     expect(browseTestMocks.filterProps[0]?.matrixViewAvailable).toBe(true);
-    expect(browseTestMocks.filterProps[0]?.viewMode).toBe("matrix");
+    expect(browseTestMocks.filterProps[0]?.viewMode).toBe("grid");
     expect(html).toContain("<table");
   });
 

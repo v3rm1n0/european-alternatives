@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "framer-motion";
 import { useCatalog } from "../contexts/CatalogContext";
-import type { SelectedFilters, SortBy, ViewMode } from "../types";
+import type { CardViewMode, SelectedFilters, SortBy } from "../types";
 
 const pricingKeys = ["free", "freemium", "paid"] as const;
 
@@ -17,8 +17,8 @@ interface FiltersProps {
   onClearAll: () => void;
   sortBy: SortBy;
   onSortChange: (sort: SortBy) => void;
-  viewMode: ViewMode;
-  onViewModeChange: (mode: ViewMode) => void;
+  viewMode: CardViewMode;
+  onViewModeChange: (mode: CardViewMode) => void;
   totalCount: number;
   filteredCount: number;
   matrixViewAvailable?: boolean;
@@ -36,7 +36,6 @@ export default function Filters({
   onViewModeChange,
   totalCount,
   filteredCount,
-  matrixViewAvailable = false,
 }: FiltersProps) {
   const { alternatives, categories } = useCatalog();
   const [showFilters, setShowFilters] = useState(false);
@@ -151,17 +150,6 @@ export default function Filters({
                 <path d="M4 14h4v-4H4v4zm0 5h4v-4H4v4zM4 9h4V5H4v4zm5 5h12v-4H9v4zm0 5h12v-4H9v4zM9 5v4h12V5H9z" />
               </svg>
             </button>
-            {matrixViewAvailable && (
-              <button
-                className={`view-toggle-button ${viewMode === "matrix" ? "active" : ""}`}
-                onClick={() => onViewModeChange("matrix")}
-                aria-label={t("browse:filters.matrixView")}
-              >
-                <svg viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5zm2 0v3h4V5H5zm6 0v3h8V5h-8zM5 10v4h4v-4H5zm6 0v4h8v-4h-8zM5 16v3h4v-3H5zm6 0v3h8v-3h-8z" />
-                </svg>
-              </button>
-            )}
           </div>
 
           <button

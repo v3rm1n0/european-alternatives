@@ -14,6 +14,11 @@
   "overlay": {
     "close": "Close"
   },
+  "resultMode": {
+    "label": "Show alternatives as",
+    "browse": "Browse",
+    "matrix": "Matrix"
+  },
   "filters": {
     "searchPlaceholder": "Search alternatives...",
     "searchLabel": "Search alternatives",
@@ -26,7 +31,6 @@
     "sortCategory": "Category",
     "gridView": "Grid view",
     "listView": "List view",
-    "matrixView": "Matrix view",
     "filters": "Filters",
     "clearAll": "Clear all filters",
     "categoryTitle": "Category",

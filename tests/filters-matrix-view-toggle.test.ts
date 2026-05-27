@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import Filters from "../src/components/Filters";
-import type { SelectedFilters, SortBy, ViewMode } from "../src/types";
+import type { CardViewMode, SelectedFilters, SortBy } from "../src/types";
 
 type FiltersPropsForTest = {
   searchTerm: string;
@@ -18,8 +18,8 @@ type FiltersPropsForTest = {
   onClearAll: () => void;
   sortBy: SortBy;
   onSortChange: (sort: SortBy) => void;
-  viewMode: ViewMode | "matrix";
-  onViewModeChange: (mode: ViewMode | "matrix") => void;
+  viewMode: CardViewMode;
+  onViewModeChange: (mode: CardViewMode) => void;
   totalCount: number;
   filteredCount: number;
   matrixViewAvailable?: boolean;
@@ -61,7 +61,6 @@ vi.mock("react-i18next", () => {
     "browse:filters.sortCategory": "Category",
     "browse:filters.gridView": "Grid view",
     "browse:filters.listView": "List view",
-    "browse:filters.matrixView": "Matrix view",
     "browse:filters.filters": "Filters",
     "browse:filters.clearAll": "Clear all filters",
   };
@@ -98,11 +97,11 @@ vi.mock("framer-motion", async () => {
 function renderFilters(
   options: {
     matrixViewAvailable?: boolean;
-    viewMode?: ViewMode | "matrix";
+    viewMode?: CardViewMode;
   } = {},
 ): string {
   filtersMocks.onViewModeChange.mockClear();
-  const FiltersForTest = Filters as ComponentType<FiltersPropsForTest>;
+  const FiltersForTest = Filters as unknown as ComponentType<FiltersPropsForTest>;
 
   return renderToStaticMarkup(
     createElement(FiltersForTest, {
@@ -127,30 +126,38 @@ function renderFilters(
   );
 }
 
-describe("filters matrix view toggle", () => {
-  it("does not offer the matrix view when the browse page marks it unavailable", () => {
-    const html = renderFilters({ matrixViewAvailable: false });
+describe("filters card layout toggle", () => {
+  it("never offers the matrix view button regardless of matrix availability", () => {
+    // After issue #500 the Browse/Matrix choice is a top-level result-mode
+    // switch — Filters owns only the grid-vs-list layout preference, not the
+    // surface kind. The matrix button must not leak back into the Filters
+    // toggle group even when the caller still passes matrixViewAvailable.
+    const htmlAvailable = renderFilters({ matrixViewAvailable: true });
+    const htmlUnavailable = renderFilters({ matrixViewAvailable: false });
 
-    expect(html).toContain('aria-label="Grid view"');
-    expect(html).toContain('aria-label="List view"');
-    expect(html).not.toContain('aria-label="Matrix view"');
+    for (const html of [htmlAvailable, htmlUnavailable]) {
+      expect(html).not.toContain('aria-label="Matrix view"');
+      expect(html).not.toContain("filters.matrixView");
+      // The view toggle should contain exactly two buttons (grid + list).
+      const toggleSection = html.match(
+        /<div\b[^>]*class="filters-view-toggle"[^>]*>([\s\S]*?)<\/div>/u,
+      )?.[1];
+      expect(toggleSection).toBeDefined();
+      const buttonCount = (toggleSection ?? "").match(/<button\b/gu)?.length ?? 0;
+      expect(buttonCount).toBe(2);
+    }
   });
 
-  it("offers matrix mode as a third view toggle only when matrix content is available", () => {
-    const html = renderFilters({
-      matrixViewAvailable: true,
-      viewMode: "matrix",
-    });
+  it("keeps the grid and list layout buttons in the Filters toggle group", () => {
+    const html = renderFilters({ matrixViewAvailable: true, viewMode: "list" });
 
     expect(html).toContain('aria-label="Grid view"');
     expect(html).toContain('aria-label="List view"');
-    expect(html).toContain('aria-label="Matrix view"');
 
-    const matrixButton = html.match(
-      /<button\b(?=[^>]*aria-label="Matrix view")[^>]*>/u,
+    const listButton = html.match(
+      /<button\b(?=[^>]*aria-label="List view")[^>]*>/u,
     )?.[0];
-
-    expect(matrixButton).toContain("view-toggle-button");
-    expect(matrixButton).toContain("active");
+    expect(listButton).toContain("view-toggle-button");
+    expect(listButton).toContain("active");
   });
 });
