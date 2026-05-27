@@ -173,6 +173,9 @@ describe("issue classifier prompt builder", () => {
     expect(prompt).toContain(endSentinel);
     expect(prompt).toMatch(/classif/i);
     expect(prompt).toMatch(/exactly one/i);
+    expect(prompt).toMatch(/one valid JSON object accepted by JSON\.parse/i);
+    expect(prompt).toMatch(/new_alternative includes proposedName/i);
+    expect(prompt).toMatch(/catalog_fact_correction includes targetEntrySlug/i);
   });
 
   it("embeds the issue number, title, body, and every comment for grounded classification", async () => {

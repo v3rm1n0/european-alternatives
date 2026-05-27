@@ -170,6 +170,18 @@ function outcomeStdout(issueNumber: number): string {
   )}\n`;
 }
 
+function snapshotStdout(): string {
+  return `${JSON.stringify(
+    {
+      categories: [{ id: "cloud-storage", name: "Cloud Storage" }],
+      countries: [{ code: "de", name: "Germany" }],
+      entries: [{ slug: "vendor-x", name: "Vendor X" }],
+    },
+    null,
+    2,
+  )}\n`;
+}
+
 function runOrchestrator(args: string[], envOverrides: Record<string, string>) {
   const env: Record<string, string> = {
     ...(process.env as Record<string, string>),
@@ -222,6 +234,13 @@ describe("process-suggestion-issue-codex orchestrator", () => {
         researchStdout(issueNumber),
         0,
       );
+      const snapshotCmd = writeFakeStage(
+        tempDir,
+        "snapshot",
+        recordPath,
+        snapshotStdout(),
+        0,
+      );
       const verifyCmd = writeFakeStage(
         tempDir,
         "verify",
@@ -246,6 +265,7 @@ describe("process-suggestion-issue-codex orchestrator", () => {
 
       const result = runOrchestrator([String(issueNumber)], {
         EUROALT_RESEARCH_ISSUE_CMD: `bash ${classifyCmd}`,
+        EUROALT_CATALOG_SNAPSHOT_CMD: `bash ${snapshotCmd}`,
         EUROALT_RESEARCH_FACT_CMD: `bash ${researchCmd}`,
         EUROALT_VERIFY_FACT_CMD: `bash ${verifyCmd}`,
         EUROALT_APPLY_VERIFIED_CMD: `bash ${applyCmd}`,
@@ -258,6 +278,7 @@ describe("process-suggestion-issue-codex orchestrator", () => {
       const stages = readStageCalls(recordPath).map((c) => c.stage);
       expect(stages).toEqual([
         "classify",
+        "snapshot",
         "research",
         "verify",
         "apply",
@@ -307,6 +328,13 @@ describe("process-suggestion-issue-codex orchestrator", () => {
         researchStdout(issueNumber),
         0,
       );
+      const snapshotCmd = writeFakeStage(
+        tempDir,
+        "snapshot",
+        recordPath,
+        snapshotStdout(),
+        0,
+      );
       const verifyCmd = writeFakeStage(
         tempDir,
         "verify",
@@ -331,6 +359,7 @@ describe("process-suggestion-issue-codex orchestrator", () => {
 
       const result = runOrchestrator([String(issueNumber)], {
         EUROALT_RESEARCH_ISSUE_CMD: `bash ${classifyCmd}`,
+        EUROALT_CATALOG_SNAPSHOT_CMD: `bash ${snapshotCmd}`,
         EUROALT_RESEARCH_FACT_CMD: `bash ${researchCmd}`,
         EUROALT_VERIFY_FACT_CMD: `bash ${verifyCmd}`,
         EUROALT_APPLY_VERIFIED_CMD: `bash ${applyCmd}`,
@@ -393,6 +422,13 @@ describe("process-suggestion-issue-codex orchestrator", () => {
         researchStdout(issueNumber),
         0,
       );
+      const snapshotCmd = writeFakeStage(
+        tempDir,
+        "snapshot",
+        recordPath,
+        snapshotStdout(),
+        0,
+      );
       const verifyCmd = writeFakeStage(
         tempDir,
         "verify",
@@ -417,6 +453,7 @@ describe("process-suggestion-issue-codex orchestrator", () => {
 
       const result = runOrchestrator([String(issueNumber)], {
         EUROALT_RESEARCH_ISSUE_CMD: `bash ${classifyCmd}`,
+        EUROALT_CATALOG_SNAPSHOT_CMD: `bash ${snapshotCmd}`,
         EUROALT_RESEARCH_FACT_CMD: `bash ${researchCmd}`,
         EUROALT_VERIFY_FACT_CMD: `bash ${verifyCmd}`,
         EUROALT_APPLY_NEW_ALT_CMD: `bash ${applyCmd}`,
@@ -428,6 +465,7 @@ describe("process-suggestion-issue-codex orchestrator", () => {
       const stages = readStageCalls(recordPath).map((c) => c.stage);
       expect(stages).toEqual([
         "classify",
+        "snapshot",
         "research",
         "verify",
         "apply",
@@ -461,6 +499,13 @@ describe("process-suggestion-issue-codex orchestrator", () => {
         researchStdout(issueNumber),
         0,
       );
+      const snapshotCmd = writeFakeStage(
+        tempDir,
+        "snapshot",
+        recordPath,
+        snapshotStdout(),
+        0,
+      );
       const verifyCmd = writeFakeStage(
         tempDir,
         "verify",
@@ -485,6 +530,7 @@ describe("process-suggestion-issue-codex orchestrator", () => {
 
       const result = runOrchestrator([String(issueNumber), "--dry-run"], {
         EUROALT_RESEARCH_ISSUE_CMD: `bash ${classifyCmd}`,
+        EUROALT_CATALOG_SNAPSHOT_CMD: `bash ${snapshotCmd}`,
         EUROALT_RESEARCH_FACT_CMD: `bash ${researchCmd}`,
         EUROALT_VERIFY_FACT_CMD: `bash ${verifyCmd}`,
         EUROALT_APPLY_VERIFIED_CMD: `bash ${applyCmd}`,
@@ -496,7 +542,9 @@ describe("process-suggestion-issue-codex orchestrator", () => {
       const calls = readStageCalls(recordPath);
       // Every stage's argv must contain --dry-run.
       for (const call of calls) {
-        expect(call.args).toContain("--dry-run");
+        if (call.stage !== "snapshot") {
+          expect(call.args).toContain("--dry-run");
+        }
       }
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
@@ -538,9 +586,17 @@ describe("process-suggestion-issue-codex orchestrator", () => {
         researchStdout(issueNumber),
         0,
       );
+      const snapshotCmd = writeFakeStage(
+        tempDir,
+        "snapshot",
+        recordPath,
+        snapshotStdout(),
+        0,
+      );
 
       const result = runOrchestrator([String(issueNumber)], {
         EUROALT_RESEARCH_ISSUE_CMD: `bash ${classifyCmd}`,
+        EUROALT_CATALOG_SNAPSHOT_CMD: `bash ${snapshotCmd}`,
         EUROALT_RESEARCH_FACT_CMD: `bash ${researchCmd}`,
       });
 
@@ -588,6 +644,13 @@ describe("process-suggestion-issue-codex orchestrator", () => {
         researchStdout(issueNumber),
         0,
       );
+      const snapshotCmd = writeFakeStage(
+        tempDir,
+        "snapshot",
+        recordPath,
+        snapshotStdout(),
+        0,
+      );
       const verifyCmd = writeFakeStage(
         tempDir,
         "verify",
@@ -607,6 +670,7 @@ describe("process-suggestion-issue-codex orchestrator", () => {
 
       const result = runOrchestrator([String(issueNumber)], {
         EUROALT_RESEARCH_ISSUE_CMD: `bash ${classifyCmd}`,
+        EUROALT_CATALOG_SNAPSHOT_CMD: `bash ${snapshotCmd}`,
         EUROALT_RESEARCH_FACT_CMD: `bash ${researchCmd}`,
         EUROALT_VERIFY_FACT_CMD: `bash ${verifyCmd}`,
         EUROALT_APPLY_VERIFIED_CMD: `bash ${applyCmd}`,
@@ -616,7 +680,7 @@ describe("process-suggestion-issue-codex orchestrator", () => {
       expect(result.status).toBe(3);
 
       const stages = readStageCalls(recordPath).map((c) => c.stage);
-      expect(stages).toEqual(["classify", "research", "verify", "apply"]);
+      expect(stages).toEqual(["classify", "snapshot", "research", "verify", "apply"]);
       expect(stages).not.toContain("finalize");
 
       const resultJsonPath = join(
@@ -658,6 +722,13 @@ describe("process-suggestion-issue-codex orchestrator", () => {
         researchStdout(issueNumber),
         0,
       );
+      const snapshotCmd = writeFakeStage(
+        tempDir,
+        "snapshot",
+        recordPath,
+        snapshotStdout(),
+        0,
+      );
       const verifyCmd = writeFakeStage(
         tempDir,
         "verify",
@@ -683,6 +754,7 @@ describe("process-suggestion-issue-codex orchestrator", () => {
 
       const result = runOrchestrator([String(issueNumber)], {
         EUROALT_RESEARCH_ISSUE_CMD: `bash ${classifyCmd}`,
+        EUROALT_CATALOG_SNAPSHOT_CMD: `bash ${snapshotCmd}`,
         EUROALT_RESEARCH_FACT_CMD: `bash ${researchCmd}`,
         EUROALT_VERIFY_FACT_CMD: `bash ${verifyCmd}`,
         EUROALT_APPLY_VERIFIED_CMD: `bash ${applyCmd}`,
@@ -694,6 +766,7 @@ describe("process-suggestion-issue-codex orchestrator", () => {
       const stages = readStageCalls(recordPath).map((c) => c.stage);
       expect(stages).toEqual([
         "classify",
+        "snapshot",
         "research",
         "verify",
         "apply",
@@ -742,6 +815,13 @@ describe("process-suggestion-issue-codex orchestrator", () => {
         researchStdout(issueNumber),
         0,
       );
+      const snapshotCmd = writeFakeStage(
+        tempDir,
+        "snapshot",
+        recordPath,
+        snapshotStdout(),
+        0,
+      );
       const verifyCmd = writeFakeStage(
         tempDir,
         "verify",
@@ -766,6 +846,7 @@ describe("process-suggestion-issue-codex orchestrator", () => {
 
       const result = runOrchestrator([String(issueNumber), "--dry-run"], {
         EUROALT_RESEARCH_ISSUE_CMD: `bash ${classifyCmd}`,
+        EUROALT_CATALOG_SNAPSHOT_CMD: `bash ${snapshotCmd}`,
         EUROALT_RESEARCH_FACT_CMD: `bash ${researchCmd}`,
         EUROALT_VERIFY_FACT_CMD: `bash ${verifyCmd}`,
         EUROALT_APPLY_VERIFIED_CMD: `bash ${applyCmd}`,

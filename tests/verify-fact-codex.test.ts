@@ -359,6 +359,9 @@ describe("verify-fact-codex prompt builders", () => {
     expect(prompt).toMatch(/audit.?quote|quote/i);
     expect(prompt).toMatch(/accessed.?date/i);
     expect(prompt).toMatch(/verify|verification/i);
+    expect(prompt).toMatch(/one valid JSON object accepted by JSON\.parse/i);
+    expect(prompt).toMatch(/evidence must be an object keyed by every field/i);
+    expect(prompt).toMatch(/perform this self-check/i);
   });
 
   it("new_alternative prompt forbids trust-score, scoring metadata, reservations, positive signals", async () => {
@@ -401,6 +404,9 @@ describe("verify-fact-codex prompt builders", () => {
     expect(prompt).toContain("country_code");
     expect(prompt).toMatch(/catalog_entries/);
     expect(prompt).toContain(beginSentinel);
+    expect(prompt).toMatch(/evidence must be an array with exactly one entry per researcher change/i);
+    expect(prompt).toMatch(/same order/i);
+    expect(prompt).toMatch(/perform this self-check/i);
   });
 
   it("rejects an unknown action passed to the new_alternative builder", async () => {

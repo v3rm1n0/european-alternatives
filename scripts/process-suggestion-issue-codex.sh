@@ -38,6 +38,7 @@ mutations and no DB writes occur.
 Environment overrides (test seams):
   EUROALT_REPO                  Default --repo target.
   EUROALT_RESEARCH_ISSUE_CMD    Override stage-1 classifier command.
+  EUROALT_CATALOG_SNAPSHOT_CMD  Override catalog snapshot command.
   EUROALT_RESEARCH_FACT_CMD     Override stage-2 researcher command.
   EUROALT_VERIFY_FACT_CMD       Override stage-3 verifier command.
   EUROALT_APPLY_VERIFIED_CMD    Override stage-4 apply command (fact-correction).
@@ -107,8 +108,10 @@ RESEARCH_FILE="$ISSUE_DIR/research.json"
 VERIFIED_FILE="$ISSUE_DIR/verified-action.json"
 OUTCOME_FILE="$ISSUE_DIR/mutation-outcome.json"
 RESULT_FILE="$ISSUE_DIR/result.json"
+SNAPSHOT_FILE="$ISSUE_DIR/catalog-snapshot.json"
 
 RESEARCH_ISSUE_CMD="${EUROALT_RESEARCH_ISSUE_CMD:-bash $SCRIPT_DIR/research-issue-codex.sh}"
+CATALOG_SNAPSHOT_CMD="${EUROALT_CATALOG_SNAPSHOT_CMD:-node $SCRIPT_DIR/catalog-suggestion-snapshot.mjs}"
 RESEARCH_FACT_CMD="${EUROALT_RESEARCH_FACT_CMD:-bash $SCRIPT_DIR/research-fact-codex.sh}"
 VERIFY_FACT_CMD="${EUROALT_VERIFY_FACT_CMD:-bash $SCRIPT_DIR/verify-fact-codex.sh}"
 APPLY_VERIFIED_CMD="${EUROALT_APPLY_VERIFIED_CMD:-php $SCRIPT_DIR/apply-verified-action.php}"
@@ -178,11 +181,36 @@ case "$CLASSIFICATION" in
         ;;
 esac
 
+# Snapshot -------------------------------------------------------------------
+TARGET_ENTRY_SLUG="$(node -e '
+  const fs = require("fs");
+  const data = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+  const slug = typeof data.targetEntrySlug === "string" ? data.targetEntrySlug : "";
+  process.stdout.write(slug);
+' "$CLASSIFICATION_FILE")"
+
+SNAPSHOT_ARGS=()
+if [[ "$CLASSIFICATION" == "catalog_fact_correction" && -n "$TARGET_ENTRY_SLUG" ]]; then
+    SNAPSHOT_ARGS=(--entry-slug "$TARGET_ENTRY_SLUG")
+fi
+
+echo "[issue #${ISSUE_NUMBER}] stage 1b: catalog-snapshot"
+set +e
+# shellcheck disable=SC2086
+$CATALOG_SNAPSHOT_CMD "${SNAPSHOT_ARGS[@]}" > "$SNAPSHOT_FILE" 2> "$ISSUE_DIR/catalog-snapshot.stderr.log"
+rc=$?
+set -e
+if [[ "$rc" -ne 0 ]]; then
+    echo "[issue #${ISSUE_NUMBER}] catalog-snapshot failed rc=${rc}; continuing with empty snapshot" >&2
+    cat "$ISSUE_DIR/catalog-snapshot.stderr.log" >&2 || true
+    printf '{}\n' > "$SNAPSHOT_FILE"
+fi
+
 # Stage 2: research ----------------------------------------------------------
 echo "[issue #${ISSUE_NUMBER}] stage 2: research-fact"
 set +e
 # shellcheck disable=SC2086
-$RESEARCH_FACT_CMD --issue-number "$ISSUE_NUMBER" --classification-file "$CLASSIFICATION_FILE" "${DRY_RUN_FLAG[@]}" --repo "$REPO" > "$RESEARCH_FILE" 2> "$ISSUE_DIR/research-fact.stderr.log"
+$RESEARCH_FACT_CMD --issue-number "$ISSUE_NUMBER" --classification-file "$CLASSIFICATION_FILE" --catalog-snapshot-file "$SNAPSHOT_FILE" "${DRY_RUN_FLAG[@]}" --repo "$REPO" > "$RESEARCH_FILE" 2> "$ISSUE_DIR/research-fact.stderr.log"
 rc=$?
 set -e
 if [[ "$rc" -ne 0 ]]; then

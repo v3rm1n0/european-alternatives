@@ -336,6 +336,8 @@ describe("research-fact-codex prompt builders", () => {
     expect(prompt).not.toMatch(/full vetting/i);
     expect(prompt).toMatch(/web search/i);
     expect(prompt).toMatch(/source/i);
+    expect(prompt).toMatch(/one valid JSON object accepted by JSON\.parse/i);
+    expect(prompt).toMatch(/newAlternative must always be a JSON object/i);
   });
 
   it("new_alternative prompt explicitly forbids trust-score, reservations, and scoring metadata", async () => {
@@ -366,6 +368,9 @@ describe("research-fact-codex prompt builders", () => {
     expect(prompt).toContain("de");
     expect(prompt).toMatch(/slug/i);
     expect(prompt).toMatch(/not.*chang|cannot.*chang|do not.*chang|forbidden/i);
+    expect(prompt).toMatch(/factCorrection must always be a JSON object/i);
+    expect(prompt).toMatch(/changes must be an array/i);
+    expect(prompt).toMatch(/perform this self-check/i);
   });
 
   it("rejects an unknown classification action in the new_alternative builder", async () => {
