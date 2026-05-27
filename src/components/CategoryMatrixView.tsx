@@ -4,7 +4,6 @@ import { useTranslation } from "react-i18next";
 import { sanitizeHref } from "../utils/sanitizeHref";
 import type {
   CategoryMatrixApiResponse,
-  MatrixAlternative,
   MatrixCriterion,
   MatrixCriterionOption,
   MatrixFact,
@@ -39,6 +38,15 @@ export default function CategoryMatrixView({
   const title = t("matrixView.title", {
     category: matrix.data.category.name,
   });
+  const groupsWithCriteria = useMemo(
+    () =>
+      matrix.data.groups.filter((group) => group.criteria.length > 0),
+    [matrix.data.groups],
+  );
+  const flatCriteria = useMemo(
+    () => groupsWithCriteria.flatMap((group) => group.criteria),
+    [groupsWithCriteria],
+  );
 
   return (
     <section
@@ -51,94 +59,79 @@ export default function CategoryMatrixView({
       <div className="category-matrix-view-scroll" tabIndex={0}>
         <table className="category-matrix-view-table" aria-label={title}>
           <thead>
-            <tr>
-              <th scope="col" className="category-matrix-view-criterion-header">
-                {t("matrixView.criteriaColumn")}
+            <tr className="category-matrix-view-group-row">
+              <th
+                scope="col"
+                rowSpan={2}
+                className="category-matrix-view-product-header category-matrix-view-corner"
+              >
+                {t("matrixView.productColumn")}
               </th>
-              {visibleAlternatives.map((alternative) => (
+              {groupsWithCriteria.map((group) => (
                 <th
-                  key={alternative.id}
-                  scope="col"
-                  className="category-matrix-view-alternative-header"
+                  key={group.id}
+                  scope="colgroup"
+                  colSpan={group.criteria.length}
+                  className="category-matrix-view-group-header"
                 >
-                  {alternative.name}
+                  <span className="category-matrix-view-group-label">
+                    {group.label}
+                  </span>
+                  {group.description !== null && (
+                    <span className="category-matrix-view-group-description">
+                      {group.description}
+                    </span>
+                  )}
+                </th>
+              ))}
+            </tr>
+            <tr className="category-matrix-view-criterion-row">
+              {flatCriteria.map((criterion) => (
+                <th
+                  key={criterion.id}
+                  scope="col"
+                  className="category-matrix-view-criterion-header"
+                >
+                  <span className="category-matrix-view-criterion-label">
+                    {criterion.label}
+                  </span>
+                  {criterion.helpText !== null && (
+                    <span className="category-matrix-view-criterion-help">
+                      {criterion.helpText}
+                    </span>
+                  )}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {matrix.data.groups.map((group) => (
-              <FragmentRows
-                key={group.id}
-                groupLabel={group.label}
-                groupDescription={group.description}
-                criteria={group.criteria}
-                alternatives={visibleAlternatives}
-                columnCount={visibleAlternatives.length + 1}
-                renderFact={(fact, criterion) =>
-                  renderMatrixFact(fact, criterion, t, i18n.language)
-                }
-              />
+            {visibleAlternatives.map((alternative) => (
+              <tr key={alternative.id}>
+                <th
+                  scope="row"
+                  className="category-matrix-view-alternative-label"
+                >
+                  {alternative.name}
+                </th>
+                {flatCriteria.map((criterion) => (
+                  <td
+                    key={criterion.id}
+                    className="category-matrix-view-fact-cell"
+                  >
+                    {renderMatrixFact(
+                      alternative.facts[criterion.id] ?? UNVERIFIED_FACT,
+                      criterion,
+                      t,
+                      i18n.language,
+                    )}
+                  </td>
+                ))}
+              </tr>
             ))}
           </tbody>
         </table>
       </div>
     </section>
-  );
-}
-
-interface FragmentRowsProps {
-  groupLabel: string;
-  groupDescription: string | null;
-  criteria: MatrixCriterion[];
-  alternatives: MatrixAlternative[];
-  columnCount: number;
-  renderFact: (fact: MatrixFact, criterion: MatrixCriterion) => ReactNode;
-}
-
-function FragmentRows({
-  groupLabel,
-  groupDescription,
-  criteria,
-  alternatives,
-  columnCount,
-  renderFact,
-}: FragmentRowsProps) {
-  return (
-    <>
-      <tr className="category-matrix-view-group-row">
-        <th scope="rowgroup" colSpan={columnCount}>
-          <span>{groupLabel}</span>
-          {groupDescription !== null && (
-            <span className="category-matrix-view-group-description">
-              {groupDescription}
-            </span>
-          )}
-        </th>
-      </tr>
-      {criteria.map((criterion) => (
-        <tr key={criterion.id}>
-          <th scope="row" className="category-matrix-view-criterion-cell">
-            <span className="category-matrix-view-criterion-label">
-              {criterion.label}
-            </span>
-            {criterion.helpText !== null && (
-              <span className="category-matrix-view-criterion-help">
-                {criterion.helpText}
-              </span>
-            )}
-          </th>
-          {alternatives.map((alternative) => (
-            <td key={alternative.id} className="category-matrix-view-fact-cell">
-              {renderFact(
-                alternative.facts[criterion.id] ?? UNVERIFIED_FACT,
-                criterion,
-              )}
-            </td>
-          ))}
-        </tr>
-      ))}
-    </>
   );
 }
 
@@ -197,7 +190,7 @@ function renderVerifiedValue(
   switch (criterion.valueType) {
     case "boolean":
       return typeof value === "boolean"
-        ? t(value ? "matrixView.yes" : "matrixView.no")
+        ? renderBooleanVerdict(value, t)
         : String(value);
     case "enum":
       return typeof value === "string"
@@ -224,6 +217,34 @@ function renderVerifiedValue(
     default:
       return Array.isArray(value) ? value.join(", ") : String(value);
   }
+}
+
+function renderBooleanVerdict(
+  value: boolean,
+  t: ReturnType<typeof useTranslation<"browse">>["t"],
+): ReactNode {
+  const toneClass = value
+    ? "category-matrix-fact--positive"
+    : "category-matrix-fact--negative";
+  const label = t(value ? "matrixView.yes" : "matrixView.no");
+
+  return (
+    <span className={`category-matrix-fact ${toneClass}`}>
+      <svg
+        className="category-matrix-fact-icon"
+        viewBox="0 0 24 24"
+        fill="currentColor"
+        aria-hidden="true"
+      >
+        {value ? (
+          <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+        ) : (
+          <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+        )}
+      </svg>
+      <span className="category-matrix-fact-label">{label}</span>
+    </span>
+  );
 }
 
 function renderOption(criterion: MatrixCriterion, optionId: string): ReactNode {

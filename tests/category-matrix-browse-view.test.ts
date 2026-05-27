@@ -98,6 +98,8 @@ vi.mock("react-i18next", () => {
     "matrixFilters.modes.must_match": "Must match",
     "matrixFilters.modes.multi_select": "Multi-select",
     "matrixView.title": "{{category}} comparison matrix",
+    "matrixView.productColumn": "Product",
+    "matrixView.criteriaColumn": "Criterion",
     "matrixView.yes": "Yes",
     "matrixView.no": "No",
     "matrixView.unverified": "Unverified",
@@ -440,6 +442,75 @@ function unavailableMatrixResult(): CategoryMatrixLoadResult {
   };
 }
 
+function allUnverifiedMatrixResult(): CategoryMatrixLoadResult {
+  return {
+    status: "ready",
+    matrix: matrix(
+      [
+        {
+          id: "privacy",
+          label: "Privacy",
+          description: null,
+          criteria: [
+            criterion("e2ee", "must_match", {
+              label: "End-to-end encryption",
+              valueType: "boolean",
+            }),
+            criterion("hosting_region", "must_match", {
+              label: "Hosting region",
+              valueType: "enum",
+              options: [
+                { id: "eu", label: "EU hosted", displayTone: "positive" },
+              ],
+            }),
+          ],
+        },
+      ],
+      [
+        matrixAlternative("alpha-chat", "Alpha Chat", {
+          e2ee: { status: "unverified", value: null },
+          hosting_region: { status: "unverified", value: null },
+        }),
+        matrixAlternative("zeta-chat", "Zeta Chat", {
+          e2ee: { status: "unverified", value: null },
+          hosting_region: { status: "unverified", value: null },
+        }),
+      ],
+    ),
+    error: null,
+  };
+}
+
+function mixedVerificationMatrixResult(): CategoryMatrixLoadResult {
+  return {
+    status: "ready",
+    matrix: matrix(
+      [
+        {
+          id: "privacy",
+          label: "Privacy",
+          description: null,
+          criteria: [
+            criterion("e2ee", "must_match", {
+              label: "End-to-end encryption",
+              valueType: "boolean",
+            }),
+          ],
+        },
+      ],
+      [
+        matrixAlternative("alpha-chat", "Alpha Chat", {
+          e2ee: { status: "verified", value: true },
+        }),
+        matrixAlternative("zeta-chat", "Zeta Chat", {
+          e2ee: { status: "unverified", value: null },
+        }),
+      ],
+    ),
+    error: null,
+  };
+}
+
 function matrix(
   groups: CategoryMatrixApiResponse["data"]["groups"],
   alternatives: MatrixAlternative[] = [],
@@ -593,7 +664,7 @@ describe("browse matrix view mode", () => {
     expect(browseTestMocks.filterProps[0]?.matrixViewAvailable).toBe(true);
   });
 
-  it("renders matrix mode as grouped criteria rows and stable alternative columns instead of normal cards", async () => {
+  it("renders matrix mode as product rows with grouped criterion columns instead of normal cards", async () => {
     const html = await renderBrowsePage({
       loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
       search: "category=messaging",
@@ -604,16 +675,24 @@ describe("browse matrix view mode", () => {
     expect(html).toContain("<table");
     expect(html).toContain("Messaging comparison matrix");
     expect(html).toContain('tabindex="0"');
+    // Group ribbon labels appear in <thead> before per-criterion column headers.
     expectInOrder(html, [
       "Privacy",
+      "Portability",
       "End-to-end encryption",
       "Hosting region",
       "Privacy policy",
-      "Portability",
       "Data retention days",
       "Data export formats",
       "Support SLA",
     ]);
+    // Alternative names appear as row-label headers (scope="row") in the matrix order.
+    expect(html).toMatch(
+      /<th[^>]*scope="row"[^>]*>[\s\S]*?Zeta Chat[\s\S]*?<\/th>/u,
+    );
+    expect(html).toMatch(
+      /<th[^>]*scope="row"[^>]*>[\s\S]*?Alpha Chat[\s\S]*?<\/th>/u,
+    );
     expectInOrder(html, ["Zeta Chat", "Alpha Chat"]);
     expect(html).toContain("Yes");
     expect(html).toContain("No");
@@ -628,6 +707,149 @@ describe("browse matrix view mode", () => {
     expect(html).toContain("Unverified");
     expect(html).toContain("Not applicable");
     expect(html).not.toMatch(/needs-deeper-research|manual-human/iu);
+  });
+
+  it("hides matrix mode when every fact in the loaded matrix is unverified", async () => {
+    await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix(
+        "messaging",
+        allUnverifiedMatrixResult(),
+      ),
+      search: "category=messaging",
+    });
+    expect(browseTestMocks.filterProps[0]?.matrixViewAvailable).toBe(false);
+  });
+
+  it("offers matrix mode as soon as at least one fact in the loaded matrix is verified", async () => {
+    await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix(
+        "messaging",
+        mixedVerificationMatrixResult(),
+      ),
+      search: "category=messaging",
+    });
+    expect(browseTestMocks.filterProps[0]?.matrixViewAvailable).toBe(true);
+  });
+
+  it("falls back to the card grid when matrix mode is active but every fact is unverified", async () => {
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix(
+        "messaging",
+        allUnverifiedMatrixResult(),
+      ),
+      search: "category=messaging",
+      viewMode: "matrix",
+    });
+
+    expect(browseTestMocks.filterProps[0]?.matrixViewAvailable).toBe(false);
+    expect(browseTestMocks.filterProps[0]?.viewMode).toBe("grid");
+    expect(html).not.toContain("<table");
+  });
+
+  it("renders boolean verified facts with a verdict color class, inline SVG icon, and localized Yes/No text", async () => {
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      search: "category=messaging",
+      viewMode: "matrix",
+    });
+
+    // Positive boolean cell carries both a tone class AND an inline SVG icon
+    // AND localized "Yes" text — so a future "icon-only" or "text-only"
+    // regression would still fail at least one of the assertions.
+    expect(html).toMatch(/category-matrix-fact--positive[\s\S]{0,500}?<svg/u);
+    expect(html).toMatch(/category-matrix-fact--positive[\s\S]{0,500}?Yes/u);
+    // Same for false → negative class + cross icon + localized "No" text.
+    expect(html).toMatch(/category-matrix-fact--negative[\s\S]{0,500}?<svg/u);
+    expect(html).toMatch(/category-matrix-fact--negative[\s\S]{0,500}?No/u);
+  });
+
+  it("places each group label in a header cell whose colSpan matches its criteria count", async () => {
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      search: "category=messaging",
+      viewMode: "matrix",
+    });
+
+    // Each group in the fixture has exactly 3 criteria → colSpan=3 ribbon.
+    // Case-insensitive because React serializes the attribute as either
+    // "colspan" or "colSpan" depending on the JSX casing used. The ribbon
+    // must not be a row-group label (the old orientation) — it must span
+    // the group's columns, so its scope is "col"/"colgroup" or omitted.
+    expect(html).toMatch(
+      /<th(?![^>]*scope="rowgroup")[^>]*colspan="3"[^>]*>[\s\S]*?Privacy/iu,
+    );
+    expect(html).toMatch(
+      /<th(?![^>]*scope="rowgroup")[^>]*colspan="3"[^>]*>[\s\S]*?Portability/iu,
+    );
+    // The ribbon must precede the per-criterion column headers.
+    expectInOrder(html, ["Privacy", "End-to-end encryption"]);
+    expectInOrder(html, ["Portability", "Data retention days"]);
+  });
+
+  it("renders the localized product corner-cell label spanning both header rows in matrix mode", async () => {
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      search: "category=messaging",
+      viewMode: "matrix",
+    });
+
+    // Corner cell carries the localized "Product" label and spans both
+    // header rows so the group ribbon and criterion row both anchor to it.
+    expect(html).toMatch(
+      /<th[^>]*rowspan="2"[^>]*>[\s\S]*?Product[\s\S]*?<\/th>/iu,
+    );
+    // The corner cell must precede the group ribbon labels in the table.
+    expectInOrder(html, ["Product", "Privacy", "Portability"]);
+  });
+
+  it("does not mount the category-matrix-filter panel while matrix view is the active surface", async () => {
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      search: "category=messaging",
+      viewMode: "matrix",
+    });
+
+    // Matrix view replaces the filter panel as the primary comparison surface;
+    // mounting both would duplicate criterion labels and leak the (hidden)
+    // panel into the in-document order of the new group ribbon.
+    expect(html).toContain("<table");
+    expect(html).not.toContain("category-matrix-filter-panel");
+  });
+
+  it("still mounts the category-matrix-filter panel in grid mode when matrix data is loaded", async () => {
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      search: "category=messaging",
+    });
+
+    // Grid mode is unchanged — the panel remains between global filters and
+    // the result cards even when a matrix is loaded for the category.
+    expect(html).not.toContain("<table");
+    expect(html).toContain("category-matrix-filter-panel");
+  });
+
+  it("falls back to grid mode and re-mounts the filter panel when matrix is requested but unavailable", async () => {
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix(
+        "messaging",
+        allUnverifiedMatrixResult(),
+      ),
+      search: "category=messaging",
+      viewMode: "matrix",
+    });
+
+    // viewMode=matrix is requested, but the all-unverified gate downgrades
+    // the effective view to grid → the panel must mount again.
+    expect(browseTestMocks.filterProps[0]?.viewMode).toBe("grid");
+    expect(html).not.toContain("<table");
+    expect(html).toContain("category-matrix-filter-panel");
+  });
+
+  it("defines the new product corner-column copy in both browse locales", () => {
+    // The corner cell label is a new user-facing string; pin both locales so
+    // a future locale prune cannot silently regress the matrix header.
+    expect(browseEn.matrixView).toMatchObject({ productColumn: "Product" });
+    expect(browseDe.matrixView).toMatchObject({ productColumn: "Produkt" });
   });
 
   it("renders sanitized source links for verified matrix facts without audit quote text", async () => {
@@ -705,7 +927,7 @@ describe("browse matrix view mode", () => {
     expect(html).toContain('data-view-mode="grid"');
   });
 
-  it("limits matrix columns to the alternatives visible after browse filters", async () => {
+  it("limits matrix rows to the alternatives visible after browse filters", async () => {
     const html = await renderBrowsePage({
       loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
       search: "category=messaging&q=alpha",
@@ -713,8 +935,15 @@ describe("browse matrix view mode", () => {
     });
 
     expect(html).toContain("<table");
-    expect(html).toContain("Alpha Chat");
+    // Filtered-out alternative does not appear as a row-label header.
+    expect(html).not.toMatch(
+      /<th[^>]*scope="row"[^>]*>[\s\S]*?Zeta Chat[\s\S]*?<\/th>/u,
+    );
+    expect(html).toMatch(
+      /<th[^>]*scope="row"[^>]*>[\s\S]*?Alpha Chat[\s\S]*?<\/th>/u,
+    );
     expect(html).not.toContain("Zeta Chat");
+    expect(html).toContain("Alpha Chat");
     expect(html).toContain("EU hosted");
     expect(html).not.toContain("https://zeta-chat.example/privacy");
     expect(html).not.toContain("1,234");

@@ -126,7 +126,12 @@ export default function BrowsePage() {
     readyCategoryMatrix.meta.criterionCount > 0 &&
     readyCategoryMatrix.meta.alternativeCount > 0 &&
     readyCategoryMatrix.data.alternatives.length > 0 &&
-    readyCategoryMatrix.data.groups.some((group) => group.criteria.length > 0);
+    readyCategoryMatrix.data.groups.some((group) => group.criteria.length > 0) &&
+    readyCategoryMatrix.data.alternatives.some((alternative) =>
+      Object.values(alternative.facts).some(
+        (fact) => fact.status === "verified",
+      ),
+    );
 
   useEffect(() => {
     if (matrixCategory === null) {
@@ -484,11 +489,13 @@ export default function BrowsePage() {
           matrixViewAvailable={matrixViewAvailable}
         />
 
-        <CategoryMatrixFilterPanel
-          state={categoryMatrixState}
-          selectedFilters={categoryScopedMatrixFilters}
-          onFilterChange={handleMatrixFilterChange}
-        />
+        {!showMatrixView && (
+          <CategoryMatrixFilterPanel
+            state={categoryMatrixState}
+            selectedFilters={categoryScopedMatrixFilters}
+            onFilterChange={handleMatrixFilterChange}
+          />
+        )}
 
         {filteredAlternatives.length > 0 ? (
           showMatrixView && readyCategoryMatrix !== null ? (

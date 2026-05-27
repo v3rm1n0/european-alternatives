@@ -61,8 +61,11 @@
   "matrixView": {
     "title": "Vergleichsmatrix fuer {{category}}",
     "criteriaColumn": "Kriterium",
+    "productColumn": "Produkt",
     "yes": "Ja",
     "no": "Nein",
+    "yesIcon": "Unterstuetzt",
+    "noIcon": "Nicht unterstuetzt",
     "unverified": "Unverified",
     "notApplicable": "Nicht anwendbar",
     "source": "Quelle",
