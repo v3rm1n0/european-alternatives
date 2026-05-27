@@ -528,10 +528,18 @@ function validateVerificationPayload(array $verification): void
     }
 
     assertNonEmptyString($verification['agent'] ?? null, 'verification agent');
-    assertHttpUrl($verification['sourceUrl'] ?? null, 'verification sourceUrl');
-    assertIsoDate($verification['accessedDate'] ?? null, 'verification accessedDate');
-    assertNonEmptyString($verification['auditQuote'] ?? null, 'verification auditQuote');
-    assertNonEmptyString($verification['verdict'] ?? null, 'verification verdict');
+    $verdict = assertNonEmptyString($verification['verdict'] ?? null, 'verification verdict');
+
+    if (in_array($verdict, ['source-inaccessible', 'source-quality-rejected'], true)) {
+        assertOptionalHttpUrl($verification['sourceUrl'] ?? null, 'verification sourceUrl');
+        assertOptionalIsoDate($verification['accessedDate'] ?? null, 'verification accessedDate');
+        assertOptionalNonEmptyString($verification['auditQuote'] ?? null, 'verification auditQuote');
+    } else {
+        assertHttpUrl($verification['sourceUrl'] ?? null, 'verification sourceUrl');
+        assertIsoDate($verification['accessedDate'] ?? null, 'verification accessedDate');
+        assertNonEmptyString($verification['auditQuote'] ?? null, 'verification auditQuote');
+    }
+
     assertNonEmptyString($verification['notes'] ?? null, 'verification notes');
     assertNonEmptyString($verification['rawResponse'] ?? null, 'verification rawResponse');
 }
@@ -590,6 +598,15 @@ function assertNonEmptyString(mixed $value, string $label): string
     return trim($value);
 }
 
+function assertOptionalNonEmptyString(mixed $value, string $label): ?string
+{
+    if ($value === null || $value === '') {
+        return null;
+    }
+
+    return assertNonEmptyString($value, $label);
+}
+
 function assertPositiveInt(mixed $value, string $label): int
 {
     if (!is_int($value) || $value < 1) {
@@ -612,6 +629,15 @@ function assertHttpUrl(mixed $value, string $label): string
     return $url;
 }
 
+function assertOptionalHttpUrl(mixed $value, string $label): ?string
+{
+    if ($value === null || $value === '') {
+        return null;
+    }
+
+    return assertHttpUrl($value, $label);
+}
+
 function assertIsoDate(mixed $value, string $label): string
 {
     $date = assertNonEmptyString($value, $label);
@@ -629,6 +655,15 @@ function assertIsoDate(mixed $value, string $label): string
     }
 
     return $date;
+}
+
+function assertOptionalIsoDate(mixed $value, string $label): ?string
+{
+    if ($value === null || $value === '') {
+        return null;
+    }
+
+    return assertIsoDate($value, $label);
 }
 
 /**

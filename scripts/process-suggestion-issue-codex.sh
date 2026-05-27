@@ -21,7 +21,11 @@ suggestion pipeline. Chains the per-stage scripts sequentially:
            b. verify-fact-codex.sh
            c. apply-verified-action.php
            d. finalize-issue-codex.sh
-       - new_alternative          → exit non-zero (untouched)
+       - new_alternative
+           a. research-fact-codex.sh
+           b. verify-fact-codex.sh
+           c. insert-verified-alternative.sh
+           d. finalize-issue-codex.sh
        - unsupported_or_unclear   → exit non-zero (untouched)
 
 Stage artifacts and a `result.json` are written under
@@ -37,9 +41,7 @@ Environment overrides (test seams):
   EUROALT_RESEARCH_FACT_CMD     Override stage-2 researcher command.
   EUROALT_VERIFY_FACT_CMD       Override stage-3 verifier command.
   EUROALT_APPLY_VERIFIED_CMD    Override stage-4 apply command (fact-correction).
-  EUROALT_APPLY_NEW_ALT_CMD     Override stage-4 apply command (new_alternative);
-                                if unset, new_alternative still exits 65 with
-                                outcome skipped_not_automated (the default).
+  EUROALT_APPLY_NEW_ALT_CMD     Override stage-4 apply command (new_alternative).
   EUROALT_FINALIZE_ISSUE_CMD    Override stage-5 finalizer command.
 USAGE
 }
@@ -110,7 +112,7 @@ RESEARCH_ISSUE_CMD="${EUROALT_RESEARCH_ISSUE_CMD:-bash $SCRIPT_DIR/research-issu
 RESEARCH_FACT_CMD="${EUROALT_RESEARCH_FACT_CMD:-bash $SCRIPT_DIR/research-fact-codex.sh}"
 VERIFY_FACT_CMD="${EUROALT_VERIFY_FACT_CMD:-bash $SCRIPT_DIR/verify-fact-codex.sh}"
 APPLY_VERIFIED_CMD="${EUROALT_APPLY_VERIFIED_CMD:-php $SCRIPT_DIR/apply-verified-action.php}"
-APPLY_NEW_ALT_CMD="${EUROALT_APPLY_NEW_ALT_CMD:-}"
+APPLY_NEW_ALT_CMD="${EUROALT_APPLY_NEW_ALT_CMD:-bash $SCRIPT_DIR/insert-verified-alternative.sh}"
 FINALIZE_ISSUE_CMD="${EUROALT_FINALIZE_ISSUE_CMD:-bash $SCRIPT_DIR/finalize-issue-codex.sh}"
 
 DRY_RUN_FLAG=()
@@ -163,11 +165,6 @@ case "$CLASSIFICATION" in
     catalog_fact_correction)
         ;;
     new_alternative)
-        if [[ -z "$APPLY_NEW_ALT_CMD" ]]; then
-            echo "[issue #${ISSUE_NUMBER}] new_alternative not yet automated; leaving issue untouched" >&2
-            write_result "new_alternative" "no" "skipped_not_automated"
-            exit 65
-        fi
         ;;
     unsupported_or_unclear)
         echo "[issue #${ISSUE_NUMBER}] unsupported_or_unclear; leaving issue untouched" >&2

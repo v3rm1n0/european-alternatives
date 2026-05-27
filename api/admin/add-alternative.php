@@ -329,6 +329,20 @@ try {
         ]);
     }
 
+    // 6b. Initialize open matrix fact rows for every matrix-enabled category
+    // on the new entry. Non-matrix categories naturally insert zero rows.
+    $matrixFactStmt = $pdo->prepare('
+        INSERT IGNORE INTO matrix_facts (entry_id, category_id, criterion_id, status)
+        SELECT ec.entry_id, mc.category_id, mc.id, :status
+        FROM entry_categories ec
+        JOIN matrix_criteria mc ON mc.category_id = ec.category_id
+        WHERE ec.entry_id = :entry_id
+    ');
+    $matrixFactStmt->execute([
+        'entry_id' => $entryId,
+        'status' => 'open',
+    ]);
+
     // 7. Auto-create tags if needed, INSERT into entry_tags (deduplicate first)
     if (count($tags) > 0) {
         $tagStmt = $pdo->prepare('SELECT id FROM tags WHERE slug = :slug');

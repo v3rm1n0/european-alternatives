@@ -57,10 +57,10 @@ type VerificationRow = {
   attempt_id: number;
   verifier_index: number;
   agent: string;
-  source_url: string;
+  source_url: string | null;
   source_title: string | null;
-  accessed_date: string;
-  audit_quote: string;
+  accessed_date: string | null;
+  audit_quote: string | null;
   verdict: string;
   notes: string;
   raw_response: string;
@@ -121,10 +121,10 @@ type VerificationRecord = {
   agent: string;
   model: string | null;
   command: string | null;
-  sourceUrl: string;
+  sourceUrl: string | null;
   sourceTitle: string | null;
-  accessedDate: string;
-  auditQuote: string;
+  accessedDate: string | null;
+  auditQuote: string | null;
   verdict: string;
   notes: string;
   countsTowardAcceptance: boolean;
@@ -247,9 +247,12 @@ function extractPersistenceRuntimeSource(source: string): string {
     "validateAcceptedVerifierDecision",
     "validateThreeVerifierRows",
     "assertNonEmptyString",
+    "assertOptionalNonEmptyString",
     "assertPositiveInt",
     "assertHttpUrl",
+    "assertOptionalHttpUrl",
     "assertIsoDate",
+    "assertOptionalIsoDate",
     "insertMatrixFactAttempt",
     "insertMatrixFactVerifications",
     "settleMatrixFact",
@@ -1095,6 +1098,60 @@ describe("matrix research persistence finalizer", () => {
     });
     expect(qualityRow?.notes).toMatch(/third-party|official|no.*source/i);
     expectUnrelatedFactsUnchanged(result.state);
+  });
+
+  it("persists source-inaccessible verifier rows with nullable source evidence as a retry outcome", async () => {
+    const decision: VerificationDecision = {
+      attempt: {
+        factId: 123,
+        status: "needs-verification",
+      },
+      accepted: false,
+      recommendedAttemptStatus: "needs-deeper-research",
+      recommendedFactStatus: "needs-deeper-research",
+      countableVerifierCount: 2,
+      verifications: [
+        verificationRecord(1),
+        verificationRecord(2),
+        verificationRecord(3, {
+          verdict: "source-inaccessible",
+          sourceUrl: null,
+          sourceTitle: null,
+          accessedDate: null,
+          auditQuote: null,
+          notes:
+            "The cited source could not be opened, so this verifier record cannot count.",
+          countsTowardAcceptance: false,
+        }),
+      ],
+    };
+
+    const result = await runPersistence(baseAttempt(), decision);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.payload).toMatchObject({
+      factId: 123,
+      factStatus: "needs-deeper-research",
+      attemptStatus: "needs-deeper-research",
+      verifierRowsInserted: 3,
+      selectedAttemptId: null,
+    });
+
+    const inaccessibleRow = result.state.verifications.find(
+      (row) => row.verifier_index === 3,
+    );
+
+    expect(inaccessibleRow).toMatchObject({
+      verdict: "source-inaccessible",
+      source_url: null,
+      accessed_date: null,
+      audit_quote: null,
+    });
+    expect(factById(result.state, 123)).toMatchObject({
+      status: "needs-deeper-research",
+      selected_attempt_id: null,
+    });
   });
 
   it("persists no-evidence researcher attempts without verifier rows", async () => {

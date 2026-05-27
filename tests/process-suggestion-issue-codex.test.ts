@@ -361,7 +361,16 @@ describe("process-suggestion-issue-codex orchestrator", () => {
     }
   });
 
-  it("classification=new_alternative exits non-zero and does not invoke apply or finalize", () => {
+  it("defaults new_alternative stage 4 to the verified-alternative insert script", () => {
+    const source = readFileSync(orchestratorPath, "utf8");
+
+    expect(source).toContain(
+      'APPLY_NEW_ALT_CMD="${EUROALT_APPLY_NEW_ALT_CMD:-bash $SCRIPT_DIR/insert-verified-alternative.sh}"',
+    );
+    expect(source).not.toContain("skipped_not_automated");
+  });
+
+  it("classification=new_alternative invokes research, verify, apply, and finalize", () => {
     const tempDir = makeProjectTempDir("orchestrator-");
     const issueNumber = 11003;
     createdIssueNumbers.push(issueNumber);
@@ -410,13 +419,20 @@ describe("process-suggestion-issue-codex orchestrator", () => {
         EUROALT_RESEARCH_ISSUE_CMD: `bash ${classifyCmd}`,
         EUROALT_RESEARCH_FACT_CMD: `bash ${researchCmd}`,
         EUROALT_VERIFY_FACT_CMD: `bash ${verifyCmd}`,
+        EUROALT_APPLY_NEW_ALT_CMD: `bash ${applyCmd}`,
         EUROALT_APPLY_VERIFIED_CMD: `bash ${applyCmd}`,
         EUROALT_FINALIZE_ISSUE_CMD: `bash ${finalizeCmd}`,
       });
 
-      expect(result.status).not.toBe(0);
+      expect(result.status).toBe(0);
       const stages = readStageCalls(recordPath).map((c) => c.stage);
-      expect(stages).toEqual(["classify"]);
+      expect(stages).toEqual([
+        "classify",
+        "research",
+        "verify",
+        "apply",
+        "finalize",
+      ]);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

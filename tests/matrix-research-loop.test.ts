@@ -356,11 +356,6 @@ describe("matrix-research-loop — mixed outcomes", () => {
       ]);
       writeScenario(writer, "verifier", [
         { exitCode: 0, stdout: jsonLine(decisionPayload(101, "verified")) },
-        { exitCode: 0, stdout: jsonLine(decisionPayload(102, "rejected")) },
-        {
-          exitCode: 0,
-          stdout: jsonLine(decisionPayload(103, "needs-deeper-research")),
-        },
       ]);
       writeScenario(writer, "persister", [
         { exitCode: 0, stdout: jsonLine(persisterPayload(101, "verified")) },
@@ -380,7 +375,7 @@ describe("matrix-research-loop — mixed outcomes", () => {
       // empty queue.
       expect(readRecord(writer, "selector").length).toBe(4);
       expect(readRecord(writer, "researcher").length).toBe(3);
-      expect(readRecord(writer, "verifier").length).toBe(3);
+      expect(readRecord(writer, "verifier").length).toBe(1);
       expect(readRecord(writer, "persister").length).toBe(3);
 
       const summary = result.stdout + result.stderr;
@@ -810,6 +805,59 @@ describe("matrix-research-loop — production default verifier wiring", () => {
       rmSync(tempDir, { recursive: true, force: true });
     }
   }, 20_000);
+
+  it("persists a researcher-level needs-deeper-research attempt without invoking verifiers", () => {
+    const tempDir = makeProjectTempDir("matrix-loop-");
+    try {
+      const writer = prepareScenarios(tempDir);
+
+      writeScenario(writer, "selector", [
+        { exitCode: 0, stdout: jsonLine(targetPayload(104)) },
+        { exitCode: 2, stderr: NO_OPEN_STDERR },
+      ]);
+      writeScenario(writer, "researcher", [
+        {
+          exitCode: 0,
+          stdout: jsonLine(
+            attemptPayload(104, {
+              proposedStatus: "needs-deeper-research",
+              proposedValue: null,
+              status: "needs-deeper-research",
+            }),
+          ),
+        },
+      ]);
+      writeScenario(writer, "verifier", [
+        { exitCode: 99, stderr: "verifier must not run\n" },
+      ]);
+      writeScenario(writer, "persister", [
+        {
+          exitCode: 0,
+          stdout: jsonLine(persisterPayload(104, "needs-deeper-research")),
+        },
+      ]);
+
+      const result = runLoop([], writer);
+
+      expect(result.status).toBe(0);
+      expect(readRecord(writer, "selector").length).toBe(2);
+      expect(readRecord(writer, "researcher").length).toBe(1);
+      expect(readRecord(writer, "verifier")).toEqual([]);
+      expect(readRecord(writer, "persister").length).toBe(1);
+
+      const persisterStdin = JSON.parse(
+        readRecord(writer, "persister")[0].stdin,
+      ) as { decision?: unknown };
+      expect(persisterStdin.decision).toBeNull();
+
+      const summary = result.stdout + result.stderr;
+      expect(summary).toMatch(/needs-deeper-research[^\d]*1/);
+      expect(summary).toMatch(/failed[^\d]*0/);
+      expect(summary).toMatch(/no-open[^\d]*1/);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("matrix-research-loop — verifier failure path", () => {

@@ -124,6 +124,10 @@ final class TestAddAlternativePdo
             return;
         }
 
+        if (str_contains($sql, 'INSERT IGNORE INTO matrix_facts')) {
+            return;
+        }
+
         if (str_contains($sql, 'INSERT IGNORE INTO us_vendor_aliases')) {
             return;
         }
@@ -754,6 +758,12 @@ sendJsonResponse(200, ['ok' => true]);
 })
 
 describe('admin mutation audit logging', () => {
+  it('initializes matrix facts automatically when add-alternative inserts a matrix-enabled entry', () => {
+    expect(addAlternativeSource).toContain('INSERT IGNORE INTO matrix_facts')
+    expect(addAlternativeSource).toContain('JOIN matrix_criteria mc ON mc.category_id = ec.category_id')
+    expect(addAlternativeSource).toContain("'status' => 'open'")
+  })
+
   it('formats structured mutation audit logs with sanitized request context', async () => {
     const rateLimitDir = createTempPath('euroalt-admin-rate-limit-')
     const longUserAgent = `Research Bot ${'A'.repeat(120)}`

@@ -305,18 +305,21 @@ function buildPersisterInvocation(options, iteration, attempt, decision) {
     };
   }
   const attemptPath = tempFilePath(iteration, "attempt");
-  const decisionPath = tempFilePath(iteration, "decision");
   writeFileSync(attemptPath, JSON.stringify(attempt), "utf8");
-  writeFileSync(decisionPath, JSON.stringify(decision), "utf8");
+  const tempFiles = [attemptPath];
+  const extraArgs = ["--attempt-file", attemptPath];
+
+  if (decision !== null) {
+    const decisionPath = tempFilePath(iteration, "decision");
+    writeFileSync(decisionPath, JSON.stringify(decision), "utf8");
+    tempFiles.push(decisionPath);
+    extraArgs.push("--decision-file", decisionPath);
+  }
+
   return {
-    cmd: buildShellCommand(options.persisterCmd, [
-      "--attempt-file",
-      attemptPath,
-      "--decision-file",
-      decisionPath,
-    ]),
+    cmd: buildShellCommand(options.persisterCmd, extraArgs),
     stdin: null,
-    tempFiles: [attemptPath, decisionPath],
+    tempFiles,
   };
 }
 
@@ -504,48 +507,55 @@ async function runIteration(options, state) {
     return { continue: true };
   }
 
-  const verifierInvocation = buildVerifierInvocation(
-    options,
-    iteration,
-    target,
-    attempt,
-  );
-  process.stderr.write(
-    `[iter ${iteration}] spawn verifier: ${verifierInvocation.cmd}\n`,
-  );
-  let verifierResult;
-  try {
-    verifierResult = await runStage(
-      verifierInvocation.cmd,
-      verifierInvocation.stdin,
-    );
-  } finally {
-    cleanupTempFiles(verifierInvocation.tempFiles);
-  }
-  if (
-    verifierResult.spawnError ||
-    verifierResult.code !== 0 ||
-    verifierResult.stdout.trim() === ""
-  ) {
-    process.stderr.write(
-      `[iter ${iteration}] ${factLabel} verifier failed (exit ${String(verifierResult.code)})\n`,
-    );
-    if (verifierResult.stderr) process.stderr.write(verifierResult.stderr);
-    state.counters.failed += 1;
-    state.consecutiveFailures += 1;
-    state.processed += 1;
-    return { continue: true };
-  }
+  let decision = null;
 
-  let decision;
-  try {
-    decision = parseJsonOrThrow(verifierResult.stdout, "Verifier");
-  } catch (error) {
-    process.stderr.write(`[iter ${iteration}] ${error.message}\n`);
-    state.counters.failed += 1;
-    state.consecutiveFailures += 1;
-    state.processed += 1;
-    return { continue: true };
+  if (attempt?.status === "needs-verification") {
+    const verifierInvocation = buildVerifierInvocation(
+      options,
+      iteration,
+      target,
+      attempt,
+    );
+    process.stderr.write(
+      `[iter ${iteration}] spawn verifier: ${verifierInvocation.cmd}\n`,
+    );
+    let verifierResult;
+    try {
+      verifierResult = await runStage(
+        verifierInvocation.cmd,
+        verifierInvocation.stdin,
+      );
+    } finally {
+      cleanupTempFiles(verifierInvocation.tempFiles);
+    }
+    if (
+      verifierResult.spawnError ||
+      verifierResult.code !== 0 ||
+      verifierResult.stdout.trim() === ""
+    ) {
+      process.stderr.write(
+        `[iter ${iteration}] ${factLabel} verifier failed (exit ${String(verifierResult.code)})\n`,
+      );
+      if (verifierResult.stderr) process.stderr.write(verifierResult.stderr);
+      state.counters.failed += 1;
+      state.consecutiveFailures += 1;
+      state.processed += 1;
+      return { continue: true };
+    }
+
+    try {
+      decision = parseJsonOrThrow(verifierResult.stdout, "Verifier");
+    } catch (error) {
+      process.stderr.write(`[iter ${iteration}] ${error.message}\n`);
+      state.counters.failed += 1;
+      state.consecutiveFailures += 1;
+      state.processed += 1;
+      return { continue: true };
+    }
+  } else {
+    process.stderr.write(
+      `[iter ${iteration}] ${factLabel} researcher settled status=${String(attempt?.status)}; skipping verifier\n`,
+    );
   }
 
   const persisterInvocation = buildPersisterInvocation(
