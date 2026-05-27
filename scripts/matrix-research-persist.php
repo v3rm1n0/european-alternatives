@@ -335,6 +335,19 @@ function determinePersistenceOutcome(array $attempt, ?array $decision): array
         ];
     }
 
+    if (($attempt['status'] ?? null) === 'rejected') {
+        if ($decision !== null) {
+            validateDecisionPayload($decision);
+            validateDecisionMatchesAttempt($decision, $attempt);
+        }
+
+        return [
+            'factStatus' => 'rejected',
+            'attemptStatus' => 'rejected',
+            'verifications' => verificationsFromDecision($decision),
+        ];
+    }
+
     if ($decision === null) {
         throw new InvalidArgumentException('A verifier decision is required for pending verification attempts');
     }

@@ -1046,6 +1046,102 @@ describe("matrix research persistence finalizer", () => {
     expectUnrelatedFactsUnchanged(result.state);
   });
 
+  it("persists a researcher-rejected attempt without verifier rows and settles the fact to rejected", async () => {
+    const result = await runPersistence(
+      baseAttempt({ status: "rejected" }),
+      null,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.payload).toMatchObject({
+      factId: 123,
+      attemptId: 700,
+      factStatus: "rejected",
+      attemptStatus: "rejected",
+      verifierRowsInserted: 0,
+      selectedAttemptId: null,
+    });
+    expect(result.state.transactions).toEqual(["begin", "commit"]);
+    expect(result.state.verifications).toEqual([]);
+
+    const attempt = expectSingleSelectedAttempt(result.state);
+    expect(attempt).toMatchObject({
+      fact_id: 123,
+      status: "rejected",
+      source_url: "https://example.test/element/security",
+      audit_quote: "Private rooms are end-to-end encrypted by default.",
+      raw_response: "researcher raw response",
+    });
+
+    expect(factById(result.state, 123)).toMatchObject({
+      status: "rejected",
+      value_bool: null,
+      value_number: null,
+      value_text: null,
+      value_json: null,
+      public_source_url: null,
+      public_source_title: null,
+      public_source_accessed_date: null,
+      selected_attempt_id: null,
+    });
+
+    expectUnrelatedFactsUnchanged(result.state);
+  });
+
+  it("forces a rejected researcher attempt to settle as rejected even when a verifier decision recommends verification", async () => {
+    const decision: VerificationDecision = {
+      attempt: {
+        factId: 123,
+        status: "rejected",
+      },
+      accepted: true,
+      recommendedAttemptStatus: "accepted",
+      recommendedFactStatus: "verified",
+      countableVerifierCount: 3,
+      verifications: [1, 2, 3].map((index) => verificationRecord(index)),
+    };
+
+    const result = await runPersistence(
+      baseAttempt({ status: "rejected" }),
+      decision,
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.payload).toMatchObject({
+      factId: 123,
+      attemptId: 700,
+      factStatus: "rejected",
+      attemptStatus: "rejected",
+      verifierRowsInserted: 3,
+      selectedAttemptId: null,
+    });
+    expect(result.state.transactions).toEqual(["begin", "commit"]);
+
+    expect(factById(result.state, 123)).toMatchObject({
+      status: "rejected",
+      value_bool: null,
+      value_number: null,
+      value_text: null,
+      value_json: null,
+      public_source_url: null,
+      public_source_title: null,
+      public_source_accessed_date: null,
+      selected_attempt_id: null,
+    });
+
+    expect(expectSingleSelectedAttempt(result.state)).toMatchObject({
+      fact_id: 123,
+      status: "rejected",
+      source_url: "https://example.test/element/security",
+      audit_quote: "Private rooms are end-to-end encrypted by default.",
+    });
+
+    expectSelectedVerifierRows(result.state);
+    expectUnrelatedFactsUnchanged(result.state);
+  });
+
   it("rejects forged accepted decisions before database writes", async () => {
     for (const decision of [
       {
