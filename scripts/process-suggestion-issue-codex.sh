@@ -263,7 +263,11 @@ set -e
 if [[ "$rc" -ne 0 ]]; then
     echo "[issue #${ISSUE_NUMBER}] finalize failed rc=${rc}" >&2
     cat "$ISSUE_DIR/finalize.stderr.log" >&2 || true
-    write_result "$CLASSIFICATION" "yes" "finalize_failed_rc_${rc}"
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        write_result "$CLASSIFICATION" "no" "finalize_failed_rc_${rc}"
+    else
+        write_result "$CLASSIFICATION" "yes" "finalize_failed_rc_${rc}"
+    fi
     exit "$rc"
 fi
 

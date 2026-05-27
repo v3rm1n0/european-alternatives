@@ -367,6 +367,36 @@ describe("finalize-issue-codex buildSuccessComment — new_alternative", () => {
     expect(body).toContain("cryptee");
   });
 
+  it("accepts the stage-4 insert envelope shape with result.ok and pending trust score status", async () => {
+    const { buildSuccessComment, validateFinalizerInputs } =
+      await loadFinalizerModule();
+
+    const mutationOutcome = newAlternativeMutationOutcome({
+      ok: undefined,
+      entry_id: undefined,
+      slug: undefined,
+      result: {
+        ok: true,
+        entryId: 4242,
+        slug: "cryptee",
+        trustScoreStatus: "pending",
+      },
+    });
+    delete (mutationOutcome as Record<string, unknown>).ok;
+    delete (mutationOutcome as Record<string, unknown>).entry_id;
+    delete (mutationOutcome as Record<string, unknown>).slug;
+
+    const verifiedAction = newAlternativeVerifiedAction();
+
+    expect(() =>
+      validateFinalizerInputs({ verifiedAction, mutationOutcome }),
+    ).not.toThrow();
+
+    const body = buildSuccessComment({ verifiedAction, mutationOutcome });
+    expect(body).toContain("cryptee");
+    expect(body).toContain("4242");
+  });
+
   it("includes researcher source URLs in a distinct section", async () => {
     const { buildSuccessComment } = await loadFinalizerModule();
 

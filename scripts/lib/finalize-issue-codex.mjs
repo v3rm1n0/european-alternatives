@@ -41,6 +41,14 @@ function assertNoBannedKeys(value, path) {
   }
 
   for (const [key, child] of Object.entries(value)) {
+    if (
+      path === "mutationOutcome.result" &&
+      key === "trustScoreStatus" &&
+      child === "pending"
+    ) {
+      continue;
+    }
+
     if (BANNED_FINALIZER_KEYS.includes(key)) {
       throw new Error(
         `banned scoring key ${JSON.stringify(key)} appears in ${path} — refusing to finalize`,
@@ -242,7 +250,12 @@ function assertInputsAreObjects(verifiedAction, mutationOutcome) {
 export function validateFinalizerInputs({ verifiedAction, mutationOutcome }) {
   assertInputsAreObjects(verifiedAction, mutationOutcome);
 
-  if (mutationOutcome.ok !== true) {
+  const result = isPlainObject(mutationOutcome.result)
+    ? mutationOutcome.result
+    : {};
+  const mutationOk = mutationOutcome.ok === true || result.ok === true;
+
+  if (!mutationOk) {
     throw new Error(
       "mutationOutcome.ok must be true; nothing to finalize (fail-closed)",
     );
@@ -326,11 +339,18 @@ function buildNewAlternativeBody(verifiedAction, mutationOutcome) {
       ? newAlternative.slug
       : typeof mutationOutcome.slug === "string"
         ? mutationOutcome.slug
+        : isPlainObject(mutationOutcome.result) &&
+            typeof mutationOutcome.result.slug === "string"
+          ? mutationOutcome.result.slug
         : "?";
   const entryId =
     mutationOutcome.entry_id !== undefined &&
     mutationOutcome.entry_id !== null
       ? String(mutationOutcome.entry_id)
+      : isPlainObject(mutationOutcome.result) &&
+          mutationOutcome.result.entryId !== undefined &&
+          mutationOutcome.result.entryId !== null
+        ? String(mutationOutcome.result.entryId)
       : "?";
   const name =
     typeof newAlternative.name === "string" && newAlternative.name.trim() !== ""
