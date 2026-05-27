@@ -178,6 +178,7 @@ Trust scores are dynamically computed on every API request by `api/catalog/scori
 | `scripts/matrix-research-run.mjs`    | Node.js  | Run one `codex` or `claude` researcher against one selected fact, with mock response support   |
 | `scripts/matrix-verify-run.mjs`      | Node.js  | Run three independent `codex` or `claude` verifier slots for one pending attempt, with mock response support |
 | `scripts/matrix-research-persist.php` | PHP     | Persist one research attempt, optional verifier decision, audit rows, and final fact status    |
+| `scripts/matrix-research-loop.mjs`   | Node.js  | Repeatedly drive the one-fact matrix research pipeline until a limit fires or the queue is empty |
 | `scripts/db-backup.sh`               | Bash     | Backup the MySQL database                                                                      |
 | `scripts/db-restore.sh`              | Bash     | Restore a database backup                                                                      |
 
@@ -263,6 +264,36 @@ The matrix research loop is deliberately one fact at a time. One script invocati
    ```
 
    Persistence writes the attempt, optional verifier decision, verifier audit rows, and final `matrix_facts` status in one transaction. A `needs-deeper-research` research attempt can be persisted without verifier rows. Pending verification attempts require a verifier decision. Verified outcomes publish the typed value and public source metadata to `matrix_facts`; rejected and retry outcomes keep the public value and public source fields empty so the API continues to show `Unverified`.
+
+### Matrix Research Loop Runner
+
+`scripts/matrix-research-loop.mjs` is an automation wrapper around the one-fact workflow above. It calls the selector, researcher, verifier, and persister in sequence, one fact per iteration, and continues until either a configured limit fires or the selector reports no eligible facts remain. The wrapper never bypasses the one-fact-per-invocation contract of the inner scripts; every stage is spawned as a separate subprocess.
+
+```bash
+node scripts/matrix-research-loop.mjs [options]
+```
+
+Default behavior with no flags: process eligible facts until the selector returns exit `2` ("no open matrix fact available").
+
+Options (all opt-in; no implicit defaults are applied when a flag is absent):
+
+- `--max-facts N` — stop after `N` processed iterations.
+- `--max-runtime MIN` — stop when wall-clock elapsed reaches `MIN` minutes (fractional minutes accepted).
+- `--max-consecutive-failures N` — stop after `N` failed iterations in a row. A successful iteration resets the streak.
+- `--category SLUG` — forwarded to the selector as `--category SLUG` so only facts in that category are processed.
+- `--selector-cmd <cmd>`, `--researcher-cmd <cmd>`, `--verifier-cmd <cmd>`, `--persister-cmd <cmd>` — override the shell command for each stage. Used by tests; production runs leave these unset.
+
+Both `--flag value` and `--flag=value` forms are accepted for every option.
+
+The runner's default stage wiring matches the manual workflow above. The verifier and persister each take their structured inputs through the file-based flags the inner scripts already expose: the runner writes the `{ target, attempt }` bundle to a per-iteration temp file under `tmp/` and appends `--attempt-bundle-file <path>` to the verifier command, and writes the attempt and decision to two separate temp files and appends `--attempt-file <path> --decision-file <path>` to the persister command. Temp files are cleaned up after each iteration. When `--verifier-cmd` or `--persister-cmd` is supplied, the runner does not inject any file flags — the operator owns the full command and receives the bundle on stdin instead.
+
+The runner prints one compact line per completed iteration to stdout (`[iter 12] fact=987 status=verified`) and a final end summary with counts for `verified`, `rejected`, `needs-deeper-research`, `skipped`, `failed`, `no-open`, plus `processed` and `elapsed-ms`. `skipped` covers persister outcomes that fall outside the three real fact statuses; `failed` covers any non-zero exit, empty stdout, or invalid JSON from selector, researcher, verifier, or persister.
+
+| Exit code | Meaning                                                                                                                                |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `0`       | The loop reached a stop condition cleanly (queue empty, limit hit, or consecutive-failure cap reached).                                |
+| `1`       | The selector reported invalid usage (exit `64`), or the runner itself encountered an unexpected error.                                 |
+| `64`      | Invalid runner CLI usage, such as an unknown option or a non-positive value for a numeric flag.                                        |
 
 ---
 
