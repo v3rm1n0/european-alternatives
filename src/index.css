@@ -2744,17 +2744,23 @@ button:disabled {
 .category-matrix-pin-button {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  justify-content: center;
   margin-left: var(--spacing-xs);
-  padding: 0.125rem 0.5rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-full);
   background: transparent;
   color: var(--text-secondary);
-  font-family: inherit;
-  font-size: var(--font-size-xs);
-  font-weight: 600;
   cursor: pointer;
+  vertical-align: middle;
+}
+
+.category-matrix-pin-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+  transform: rotate(-22deg);
 }
 
 .category-matrix-pin-button.is-pinned {

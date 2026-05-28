@@ -472,6 +472,8 @@ export default function CategoryMatrixView({
                           <button
                             type="button"
                             aria-pressed={isPinned ? "true" : "false"}
+                            aria-label={pinLabel}
+                            title={pinLabel}
                             className={
                               isPinned
                                 ? "category-matrix-pin-button is-pinned"
@@ -479,7 +481,7 @@ export default function CategoryMatrixView({
                             }
                             onClick={() => togglePin(alternative.id)}
                           >
-                            {pinLabel}
+                            {renderPinIcon(isPinned)}
                           </button>
                         </th>
                         {filteredCriteria.map((criterion, colIndex) => (
@@ -518,6 +520,23 @@ export default function CategoryMatrixView({
         </>
       )}
     </section>
+  );
+}
+
+function renderPinIcon(isPinned: boolean): ReactNode {
+  return (
+    <svg
+      className="category-matrix-pin-icon"
+      viewBox="0 0 24 24"
+      fill={isPinned ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M16 3l5 5-4 4v5l-2 2-5-5-4 4-2-2 4-4-5-5 2-2h5l4-4z" />
+    </svg>
   );
 }
 

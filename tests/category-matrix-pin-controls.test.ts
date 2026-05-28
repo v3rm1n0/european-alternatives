@@ -348,26 +348,29 @@ function mobileSlice(html: string): string {
 // ---------------------------------------------------------------------------
 
 describe("matrix pin controls — per-row pin button", () => {
-  it("renders a localised pin button for each alternative row in the default (no pins) state", async () => {
+  it("renders a localised icon-only pin button for each alternative row in the default state", async () => {
     const html = await renderMatrix();
 
     // Every alternative gets a pin affordance. The accessible name must
-    // mention the product so screen-reader users can distinguish them.
-    expect(html).toContain("Pin Alpha Chat");
-    expect(html).toContain("Pin Beta Chat");
-    expect(html).toContain("Pin Gamma Chat");
+    // mention the product so screen-reader users can distinguish them,
+    // while the visible control remains an icon instead of a text button.
+    expect(html).toContain('aria-label="Pin Alpha Chat"');
+    expect(html).toContain('aria-label="Pin Beta Chat"');
+    expect(html).toContain('aria-label="Pin Gamma Chat"');
+    expect(html).toContain("category-matrix-pin-icon");
+    expect(html).not.toMatch(/<button[^>]*category-matrix-pin-button[^>]*>\s*Pin Alpha Chat\s*<\/button>/u);
   });
 
-  it("flips the pin button label to the localised Unpin string for already-pinned rows", async () => {
+  it("flips the icon button accessible label to the localised Unpin string for already-pinned rows", async () => {
     pinHookSeeds.pinned = ["alpha-chat"];
 
     const html = await renderMatrix();
 
     // Alpha is pinned → its button advertises the inverse action.
-    expect(html).toContain("Unpin Alpha Chat");
+    expect(html).toContain('aria-label="Unpin Alpha Chat"');
     // The other rows still offer Pin (unchanged).
-    expect(html).toContain("Pin Beta Chat");
-    expect(html).toContain("Pin Gamma Chat");
+    expect(html).toContain('aria-label="Pin Beta Chat"');
+    expect(html).toContain('aria-label="Pin Gamma Chat"');
   });
 
   it("exposes aria-pressed state on the pin button (true for pinned, false for unpinned)", async () => {
@@ -377,11 +380,11 @@ describe("matrix pin controls — per-row pin button", () => {
 
     // Beta's pin button must indicate it is pressed (pinned).
     expect(html).toMatch(
-      /aria-pressed="true"[^>]*>[\s\S]{0,400}?Unpin Beta Chat|Unpin Beta Chat[\s\S]{0,400}?aria-pressed="true"/u,
+      /aria-pressed="true"[^>]*aria-label="Unpin Beta Chat"|aria-label="Unpin Beta Chat"[^>]*aria-pressed="true"/u,
     );
-    // Alpha (not pinned) must show the off state next to its Pin label.
+    // Alpha (not pinned) must show the off state next to its accessible Pin label.
     expect(html).toMatch(
-      /aria-pressed="false"[^>]*>[\s\S]{0,400}?Pin Alpha Chat|Pin Alpha Chat[\s\S]{0,400}?aria-pressed="false"/u,
+      /aria-pressed="false"[^>]*aria-label="Pin Alpha Chat"|aria-label="Pin Alpha Chat"[^>]*aria-pressed="false"/u,
     );
   });
 });
