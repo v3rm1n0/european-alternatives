@@ -21,7 +21,11 @@ type AdminPayload = Record<string, unknown>;
 
 type LibraryModule = {
   BANNED_INSERT_KEYS: readonly string[];
-  buildAdminPayload: (verifiedAction: Record<string, unknown>) => AdminPayload;
+  INSERT_ALLOWED_STATUSES: readonly string[];
+  buildAdminPayload: (
+    verifiedAction: Record<string, unknown>,
+    options?: Record<string, unknown>,
+  ) => AdminPayload;
   assertNoBannedKeys: (value: unknown) => void;
 };
 
@@ -351,17 +355,37 @@ describe("insert-verified-alternative library", () => {
       expect(payload).not.toHaveProperty("accessedDate");
     });
 
-    it("buildAdminPayload force-overwrites status to 'alternative' even if input smuggles 'draft' or 'us'", async () => {
+    it("buildAdminPayload validates and preserves catalog role status", async () => {
       const { buildAdminPayload } = await loadLibrary();
 
-      for (const smuggled of ["draft", "us"]) {
+      for (const status of ["alternative", "us", "draft"]) {
         const payload = buildAdminPayload(
-          buildVerifiedAction({}, { status: smuggled }),
+          buildVerifiedAction({}, { status }),
         );
-        expect(payload.status, `status smuggled as ${smuggled}`).toBe(
-          "alternative",
-        );
+        expect(payload.status, `status ${status}`).toBe(status);
       }
+    });
+
+    it("buildAdminPayload supports a CLI status override for benchmark inserts", async () => {
+      const { buildAdminPayload } = await loadLibrary();
+
+      const payload = buildAdminPayload(buildVerifiedAction(), {
+        statusOverride: "us",
+      });
+
+      expect(payload.status).toBe("us");
+    });
+
+    it("buildAdminPayload rejects unknown catalog role statuses", async () => {
+      const { buildAdminPayload } = await loadLibrary();
+
+      expect(() =>
+        buildAdminPayload(buildVerifiedAction({}, { status: "denied" })),
+      ).toThrow(/status|alternative|us|draft/i);
+
+      expect(() =>
+        buildAdminPayload(buildVerifiedAction(), { statusOverride: "denied" }),
+      ).toThrow(/statusOverride|alternative|us|draft/i);
     });
 
     it("buildAdminPayload throws when action is missing or wrong, or when newAlternative is missing", async () => {
@@ -541,6 +565,30 @@ describe("insert-verified-alternative runner CLI", () => {
       const wireBody = JSON.parse(req?.body ?? "{}") as Record<string, unknown>;
       expect(wireBody.slug).toBe("cryptee");
       expect(wireBody.status).toBe("alternative");
+    });
+
+    it("--status us overrides the verified_action status for CLI benchmark inserts", async () => {
+      const result = await runRunner(
+        [
+          "--verified-action-json",
+          JSON.stringify(buildVerifiedAction()),
+          "--status",
+          "us",
+        ],
+        {
+          env: {
+            EUROALT_API_BASE: mockServer?.baseUrl,
+            EUROALT_ADMIN_TOKEN: ADMIN_TOKEN,
+          },
+        },
+      );
+
+      expect(result.exitCode, result.stderr).toBe(0);
+      expect(mockServer?.recorded.length).toBe(1);
+      const wireBody = JSON.parse(
+        mockServer?.recorded[0]?.body ?? "{}",
+      ) as Record<string, unknown>;
+      expect(wireBody.status).toBe("us");
     });
 
     it("missing EUROALT_API_BASE in a non-dry-run fail-closes with exit 65 and emits no envelope", async () => {

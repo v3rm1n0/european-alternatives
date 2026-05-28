@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   assertNoBannedKeys,
   buildAdminPayload,
+  INSERT_ALLOWED_STATUSES,
 } from "./lib/insert-verified-alternative.mjs";
 
 const SUCCESS = 0;
@@ -20,13 +21,14 @@ function printUsage(stream) {
   node scripts/insert-verified-alternative-run.mjs --verified-action-file <path> [options]
 
 Stage-4 of the catalog-suggestion pipeline. Inserts a verified
-new_alternative through the admin API as status="alternative" with
+new_alternative through the admin API with status="alternative" by default and
 trustScoreStatus=pending. Does not handle fact corrections (#477) and
 does not comment/close (#478).
 
 Options:
   --verified-action-file <path>   Read the stage-3 verified_action JSON.
   --verified-action-json <json>   Inline stage-3 verified_action JSON.
+  --status <status>               Insert as one of: ${INSERT_ALLOWED_STATUSES.join(", ")}.
   --dry-run                       Print would-be payload without contacting the API.
   --repo <owner/name>             Source repo for downstream consumers (passthrough).
   --help, -h                      Show this help.
@@ -59,6 +61,7 @@ function parseArguments(argv) {
     verifiedActionJson: null,
     dryRun: false,
     repo: null,
+    status: null,
     help: false,
   };
 
@@ -90,6 +93,7 @@ function parseArguments(argv) {
       { flag: "--verified-action-file", key: "verifiedActionFile" },
       { flag: "--verified-action-json", key: "verifiedActionJson" },
       { flag: "--repo", key: "repo" },
+      { flag: "--status", key: "status" },
     ];
 
     let matched = false;
@@ -296,7 +300,9 @@ async function main(argv) {
 
   try {
     assertNoBannedKeys(verifiedAction);
-    payload = buildAdminPayload(verifiedAction);
+    payload = buildAdminPayload(verifiedAction, {
+      statusOverride: options.status,
+    });
   } catch (error) {
     process.stderr.write(`Fail-closed: ${error.message}\n`);
     return FAIL_CLOSED;

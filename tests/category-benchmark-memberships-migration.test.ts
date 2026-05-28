@@ -9,6 +9,9 @@ const migrationPath = resolve(
 const signalMigrationPath = resolve(
   "scripts/migrations/057-messaging-signal-membership.sql",
 );
+const jurisdictionMigrationPath = resolve(
+  "scripts/migrations/058-non-european-jurisdiction-countries.sql",
+);
 
 function readMigration(): string {
   expect(
@@ -26,6 +29,15 @@ function readSignalMigration(): string {
   ).toBe(true);
 
   return readFileSync(signalMigrationPath, "utf8");
+}
+
+function readJurisdictionMigration(): string {
+  expect(
+    existsSync(jurisdictionMigrationPath),
+    "Expected migration 058 to add comparison-product jurisdictions.",
+  ).toBe(true);
+
+  return readFileSync(jurisdictionMigrationPath, "utf8");
 }
 
 describe("category benchmark membership migration", () => {
@@ -79,6 +91,19 @@ describe("messaging Signal membership migration", () => {
     expect(sql).toMatch(/mc\.`?category_id`?\s*=\s*'messaging'/i);
     expect(sql).toMatch(
       /INSERT\s+INTO\s+`?schema_migrations`?\s*\(\s*`?version`?\s*\)\s*VALUES\s*\(\s*'057-messaging-signal-membership'\s*\)/i,
+    );
+  });
+});
+
+describe("comparison-product jurisdiction migration", () => {
+  it("adds UAE and British Virgin Islands country rows idempotently", () => {
+    const sql = readJurisdictionMigration();
+
+    expect(sql).toMatch(/INSERT\s+IGNORE\s+INTO\s+`?countries`?/i);
+    expect(sql).toMatch(/\('ae',\s*'United Arab Emirates'/i);
+    expect(sql).toMatch(/\('vg',\s*'British Virgin Islands'/i);
+    expect(sql).toMatch(
+      /INSERT\s+INTO\s+`?schema_migrations`?\s*\(\s*`?version`?\s*\)\s*VALUES\s*\(\s*'058-non-european-jurisdiction-countries'\s*\)/i,
     );
   });
 });

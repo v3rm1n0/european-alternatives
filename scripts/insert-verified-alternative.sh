@@ -13,12 +13,13 @@ Usage:
   scripts/insert-verified-alternative.sh --help
 
 Stage-4 of the catalog-suggestion pipeline. Inserts a verified
-new_alternative through the admin API as status="alternative" with
+new_alternative through the admin API as status="alternative" by default with
 trustScoreStatus=pending. Forwards arguments to the Node runner.
 
 Options:
   --verified-action-file <path>   Stage-3 verified_action JSON.
   --verified-action-json <json>   Inline stage-3 verified_action JSON.
+  --status <status>               Insert as alternative, us, or draft.
   --dry-run                       Print would-be payload without contacting the API.
   --repo <owner/name>             Source repo passthrough for downstream stages.
 
@@ -46,7 +47,7 @@ while [[ "$#" -gt 0 ]]; do
             ARGS+=("--dry-run")
             shift
             ;;
-        --verified-action-file|--verified-action-json|--repo)
+        --verified-action-file|--verified-action-json|--repo|--status)
             if [[ "$#" -lt 2 ]]; then
                 echo "error: $1 requires a value" >&2
                 exit 64
@@ -54,7 +55,7 @@ while [[ "$#" -gt 0 ]]; do
             ARGS+=("$1" "$2")
             shift 2
             ;;
-        --verified-action-file=*|--verified-action-json=*|--repo=*)
+        --verified-action-file=*|--verified-action-json=*|--repo=*|--status=*)
             ARGS+=("$1")
             shift
             ;;

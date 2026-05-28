@@ -104,7 +104,7 @@ $websiteUrl = trim($body['website_url']);
 validatePublicUrl($websiteUrl, 'website_url');
 
 // Validate enums
-$validStatuses = ['alternative', 'draft'];
+$validStatuses = ['alternative', 'us', 'draft'];
 $status = $body['status'] ?? 'alternative';
 if (!in_array($status, $validStatuses, true)) {
     jsonError(400, 'invalid_status');
@@ -292,7 +292,6 @@ try {
         'slug' => $slug,
         'status' => $status,
         'source_file' => 'research',
-        // 'us' included for forward compatibility — currently only 'alternative' and 'draft' pass validation
         'is_active' => in_array($status, ['alternative', 'us'], true) ? 1 : 0,
         'name' => $name,
         'description_en' => trim($body['description_en']),

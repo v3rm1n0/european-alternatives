@@ -117,6 +117,7 @@ const baselineCatalogSnapshot: CatalogSnapshot = {
     { code: "de", name: "Germany" },
     { code: "fr", name: "France" },
     { code: "gb", name: "United Kingdom" },
+    { code: "us", name: "United States" },
   ],
   entries: [
     { slug: "element", name: "Element" },
@@ -316,6 +317,7 @@ describe("research-fact-codex prompt builders", () => {
     expect(prompt).toMatch(/newAlternative must always be a JSON object/i);
     expect(prompt).toMatch(/country_code is mandatory/i);
     expect(prompt).toMatch(/do not infer country_code from a TLD/i);
+    expect(prompt).toMatch(/status is "alternative" or "us"/i);
     expect(prompt).toMatch(/Every non-null source-backed field/i);
     expect(prompt).toMatch(/perform this self-check/i);
     expect(prompt).toContain(beginSentinel);
@@ -765,6 +767,39 @@ describe("research-fact-codex parser — validation rules mirrored from add-alte
         baselineCatalogSnapshot,
       ),
     ).toThrow(/country|zz/i);
+  });
+
+  it("accepts status 'us' for benchmark or comparison products", async () => {
+    const { parseResearchResponse } = await loadResearcherModule();
+
+    const parsed = parseResearchResponse(
+      modelResponse(
+        newAlternativePayload({
+          slug: "benchmark-chat",
+          name: "Benchmark Chat",
+          country_code: "us",
+          status: "us",
+        }),
+      ),
+      newAlternativeClassification,
+      baselineCatalogSnapshot,
+    );
+
+    expect(
+      (parsed.newAlternative as Record<string, unknown>).status,
+    ).toBe("us");
+  });
+
+  it("rejects an unsupported newAlternative status", async () => {
+    const { parseResearchResponse } = await loadResearcherModule();
+
+    expect(() =>
+      parseResearchResponse(
+        modelResponse(newAlternativePayload({ status: "denied" })),
+        newAlternativeClassification,
+        baselineCatalogSnapshot,
+      ),
+    ).toThrow(/status|alternative|us/i);
   });
 
   it("rejects a slug that already exists in the catalog snapshot", async () => {

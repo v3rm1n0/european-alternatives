@@ -823,6 +823,37 @@ sendJsonResponse(200, ['ok' => true]);
     )
   })
 
+  it('accepts status us for active benchmark catalog entries', async () => {
+    const rateLimitDir = createTempPath('euroalt-admin-rate-limit-')
+    const response = await runPhpAuthRequest(addAlternativeSuccessRunnerCode, {
+      authorization: `Bearer ${validToken}`,
+      body: JSON.stringify({
+        slug: 'benchmark-chat',
+        status: 'us',
+        name: 'Benchmark Chat',
+        description_en: 'Non-European messaging benchmark.',
+        country_code: 'us',
+        website_url: 'https://benchmark-chat.example',
+        categories: [{ category_id: 'messaging', is_primary: true }],
+        tags: [],
+        replaces_us: [],
+      }),
+      now: 11_225,
+      rateLimitDir,
+      remoteAddr: '198.51.100.63',
+    })
+
+    expect(response.status).toBe(201)
+    expect(response.json).toEqual({
+      ok: true,
+      entry_id: 3001,
+      slug: 'benchmark-chat',
+    })
+    expect(response.stderr).toContain(
+      'euroalt-admin: audit action=add-alternative slug=benchmark-chat entry_id=3001 status=us ip=198.51.100.63',
+    )
+  })
+
   it('escapes newlines in auto-created US vendor log messages', async () => {
     const rateLimitDir = createTempPath('euroalt-admin-rate-limit-')
     const response = await runPhpAuthRequest(addAlternativeSuccessRunnerCode, {

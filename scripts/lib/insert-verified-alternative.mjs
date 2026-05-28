@@ -30,7 +30,11 @@ const ENVELOPE_METADATA_KEYS = Object.freeze([
 
 const NEW_ALTERNATIVE_BODY_STRIP_KEYS = Object.freeze(["sources"]);
 
-const FORCED_STATUS = "alternative";
+export const INSERT_ALLOWED_STATUSES = Object.freeze([
+  "alternative",
+  "us",
+  "draft",
+]);
 
 function isPlainObject(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -76,7 +80,23 @@ export function assertNoBannedKeys(value) {
   }
 }
 
-export function buildAdminPayload(verifiedAction) {
+function normalizeInsertStatus(value, label) {
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new Error(`${label} must be a non-empty string`);
+  }
+
+  const normalized = value.trim().toLowerCase();
+
+  if (!INSERT_ALLOWED_STATUSES.includes(normalized)) {
+    throw new Error(
+      `${label} must be one of ${INSERT_ALLOWED_STATUSES.join(", ")} (got ${JSON.stringify(value)})`,
+    );
+  }
+
+  return normalized;
+}
+
+export function buildAdminPayload(verifiedAction, options = {}) {
   if (!isPlainObject(verifiedAction)) {
     throw new Error("verified_action must be a JSON object");
   }
@@ -104,6 +124,10 @@ export function buildAdminPayload(verifiedAction) {
   assertNoBannedKeys(verifiedAction);
 
   const payload = {};
+  const statusOverride =
+    isPlainObject(options) && "statusOverride" in options
+      ? options.statusOverride
+      : null;
 
   for (const [key, value] of Object.entries(newAlternative)) {
     if (NEW_ALTERNATIVE_BODY_STRIP_KEYS.includes(key)) {
@@ -115,7 +139,12 @@ export function buildAdminPayload(verifiedAction) {
     payload[key] = value;
   }
 
-  payload.status = FORCED_STATUS;
+  payload.status =
+    statusOverride !== null && statusOverride !== undefined
+      ? normalizeInsertStatus(statusOverride, "statusOverride")
+      : "status" in newAlternative
+        ? normalizeInsertStatus(newAlternative.status, "newAlternative.status")
+        : "alternative";
 
   return payload;
 }

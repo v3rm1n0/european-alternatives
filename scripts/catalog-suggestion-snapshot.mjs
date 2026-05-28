@@ -119,6 +119,27 @@ function dataArray(payload, label) {
   return payload.data;
 }
 
+function writeStdout(text) {
+  return new Promise((resolve, reject) => {
+    const onError = (error) => {
+      process.stdout.off("drain", onDrain);
+      reject(error);
+    };
+    const onDrain = () => {
+      process.stdout.off("error", onError);
+      resolve();
+    };
+
+    process.stdout.once("error", onError);
+    if (process.stdout.write(text)) {
+      process.stdout.off("error", onError);
+      resolve();
+      return;
+    }
+    process.stdout.once("drain", onDrain);
+  });
+}
+
 function normalizeEntry(entry) {
   const secondaryCategories = Array.isArray(entry.secondaryCategories)
     ? entry.secondaryCategories
@@ -170,12 +191,17 @@ async function main(argv) {
 
   const apiBase = trimTrailingSlash(options.apiBase);
 
-  const [categoriesPayload, countriesPayload, entriesPayload] =
-    await Promise.all([
-      fetchJson(`${apiBase}/catalog/categories?locale=en`),
-      fetchJson(`${apiBase}/catalog/countries?locale=en`),
-      fetchJson(`${apiBase}/catalog/entries?status=alternative&locale=en`),
-    ]);
+  const [
+    categoriesPayload,
+    countriesPayload,
+    alternativeEntriesPayload,
+    usEntriesPayload,
+  ] = await Promise.all([
+    fetchJson(`${apiBase}/catalog/categories?locale=en`),
+    fetchJson(`${apiBase}/catalog/countries?locale=en`),
+    fetchJson(`${apiBase}/catalog/entries?status=alternative&locale=en`),
+    fetchJson(`${apiBase}/catalog/entries?status=us&locale=en`),
+  ]);
 
   const categories = dataArray(categoriesPayload, "categories").map(
     (category) => ({
@@ -189,12 +215,29 @@ async function main(argv) {
     name: String(country.label ?? country.code),
   }));
 
-  const entries = dataArray(entriesPayload, "entries").map((entry) => ({
-    slug: String(entry.id),
-    name: String(entry.name ?? entry.id),
-    status: String(entry.status ?? "alternative"),
-    website: entry.website ?? null,
-  }));
+  const entriesBySlug = new Map();
+  const entryGroups = [
+    {
+      status: "alternative",
+      entries: dataArray(alternativeEntriesPayload, "alternative entries"),
+    },
+    { status: "us", entries: dataArray(usEntriesPayload, "us entries") },
+  ];
+  for (const { status, entries: groupEntries } of entryGroups) {
+    for (const entry of groupEntries) {
+      const slug = String(entry.id);
+      if (slug === "" || entriesBySlug.has(slug)) {
+        continue;
+      }
+      entriesBySlug.set(slug, {
+        slug,
+        name: String(entry.name ?? entry.id),
+        status: String(entry.status ?? status),
+        website: entry.website ?? null,
+      });
+    }
+  }
+  const entries = Array.from(entriesBySlug.values());
 
   const snapshot = { categories, countries, entries };
 
@@ -216,13 +259,13 @@ async function main(argv) {
     snapshot.entry = normalizeEntry(entry);
   }
 
-  process.stdout.write(`${JSON.stringify(snapshot, null, 2)}\n`);
+  await writeStdout(`${JSON.stringify(snapshot, null, 2)}\n`);
   return 0;
 }
 
 main(process.argv.slice(2)).then(
   (exitCode) => {
-    process.exit(exitCode);
+    process.exitCode = exitCode;
   },
   (error) => {
     const message = error instanceof Error ? error.message : String(error);
