@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
@@ -493,6 +494,21 @@ describe("matrix cell color-independence", () => {
 });
 
 describe("matrix cell popover wiring", () => {
+  it("styles the popover as an opaque high-contrast surface over the dense table", () => {
+    const css = readFileSync(
+      new URL("../src/index.css", import.meta.url),
+      "utf8",
+    );
+    const rule = css.match(
+      /\.category-matrix-cell-popover\s*\{[\s\S]*?\n\}/u,
+    )?.[0];
+
+    expect(rule, "expected the popover CSS rule to exist").toBeDefined();
+    expect(rule).toMatch(/background(?:-color)?\s*:\s*#[0-9a-f]{6}/iu);
+    expect(rule).toMatch(/opacity\s*:\s*1/u);
+    expect(rule).toMatch(/box-shadow\s*:/u);
+  });
+
   it("wires aria-controls on every trigger to a popover container whose id matches", async () => {
     const html = await renderMatrix();
 
