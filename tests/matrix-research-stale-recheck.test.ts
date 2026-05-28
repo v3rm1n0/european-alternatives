@@ -56,6 +56,7 @@ const projectDir = resolve(".");
 const matrixEndpointPath = resolve("api/catalog/matrix.php");
 const cachePath = resolve("api/cache.php");
 const helpersPath = resolve("api/catalog/helpers.php");
+const scoringPath = resolve("api/catalog/scoring.php");
 
 const selectorStateMarker = "__STALE_SELECTOR_STATE__";
 const persistenceStateMarker = "__STALE_PERSISTENCE_STATE__";
@@ -1658,6 +1659,7 @@ define('EUROALT_CACHE_DIR', ${JSON.stringify(`${cacheDir}/`)});
 define('EUROALT_CACHE_TTL', 300);
 require ${JSON.stringify(cachePath)};
 require ${JSON.stringify(helpersPath)};
+require ${JSON.stringify(scoringPath)};
 
 $_SERVER['REQUEST_METHOD'] = 'GET';
 $_GET = ['category' => ${JSON.stringify(category)}, 'locale' => 'en'];
