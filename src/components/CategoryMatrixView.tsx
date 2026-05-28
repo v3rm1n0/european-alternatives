@@ -467,14 +467,6 @@ export default function CategoryMatrixView({
                           <span className="category-matrix-view-alternative-name">
                             {alternative.name}
                           </span>
-                          {isPinned && (
-                            <span
-                              className="category-matrix-pin-badge"
-                              aria-hidden="true"
-                            >
-                              {t("matrixView.pinnedBadge")}
-                            </span>
-                          )}
                           <button
                             type="button"
                             aria-pressed={isPinned ? "true" : "false"}
@@ -502,7 +494,6 @@ export default function CategoryMatrixView({
                                 UNVERIFIED_FACT
                               }
                               criterion={criterion}
-                              alternativeId={alternative.id}
                               alternativeName={alternative.name}
                               t={t}
                               language={i18n.language}
@@ -684,11 +675,9 @@ function MobileMatrixInspector({
                     <MatrixCell
                       fact={alternative.facts[criterion.id] ?? UNVERIFIED_FACT}
                       criterion={criterion}
-                      alternativeId={alternative.id}
                       alternativeName={alternative.name}
                       t={t}
                       language={language}
-                      idScope="mobile"
                     />
                   </div>
                 ))}
@@ -829,93 +818,59 @@ function renderLegendIcon(
 interface MatrixCellProps {
   fact: MatrixFact;
   criterion: MatrixCriterion;
-  alternativeId: string;
   alternativeName: string;
   t: TranslateFn;
   language: string;
-  idScope?: string;
 }
 
 function MatrixCell({
   fact,
   criterion,
-  alternativeId,
   alternativeName,
   t,
   language,
-  idScope,
 }: MatrixCellProps) {
-  const [open, setOpen] = useState(false);
-  const scopeSuffix = idScope === undefined ? "" : `-${idScope}`;
-  const popoverId = `category-matrix-cell-popover-${alternativeId}-${criterion.id}${scopeSuffix}`;
-  const triggerLabel = t("matrixView.popover.openLabel", {
-    product: alternativeName,
-    criterion: criterion.label,
-  });
-  const popoverBody = renderFactBody(fact, criterion, t, language);
-  const triggerBody = renderTriggerBody(fact, criterion, popoverBody);
+  const body = renderFactBody(fact, criterion, t, language);
+  const sourceHref = getVerifiedSourceHref(fact);
 
-  return (
-    <span
-      className={
-        open
-          ? "category-matrix-cell category-matrix-cell--open"
-          : "category-matrix-cell"
-      }
-    >
-      <button
-        type="button"
-        aria-haspopup="dialog"
-        aria-expanded={open ? "true" : "false"}
-        aria-controls={popoverId}
-        aria-label={triggerLabel}
-        className="category-matrix-cell-trigger"
-        onClick={() => setOpen((prev) => !prev)}
-      >
-        {triggerBody}
-      </button>
-      <span
-        id={popoverId}
-        role="dialog"
-        aria-label={triggerLabel}
-        data-testid="category-matrix-cell-popover"
-        className="category-matrix-cell-popover"
-        hidden={!open}
-      >
-        <span className="category-matrix-cell-popover-header">
-          <span className="category-matrix-cell-popover-product">
-            {alternativeName}
-          </span>
-          <span className="category-matrix-cell-popover-criterion">
-            {criterion.label}
-          </span>
-          <button
-            type="button"
-            className="category-matrix-cell-popover-close"
-            onClick={() => setOpen(false)}
-          >
-            {t("matrixView.popover.close")}
-          </button>
-        </span>
-        <span className="category-matrix-cell-popover-value">
-          {popoverBody}
-        </span>
-        {renderPopoverSource(fact, t)}
+  if (sourceHref !== undefined) {
+    return (
+      <span className="category-matrix-cell">
+        <a
+          className="category-matrix-cell-source-link"
+          href={sourceHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={t("matrixView.openSourceLabel", {
+            product: alternativeName,
+            criterion: criterion.label,
+          })}
+        >
+          {renderSourceLinkBody(fact, criterion, body)}
+        </a>
       </span>
-    </span>
-  );
+    );
+  }
+
+  return <span className="category-matrix-cell">{body}</span>;
 }
 
-// The trigger is a <button>, whose content model forbids interactive
-// descendants. For url-valueType cells the verified value would otherwise
-// render as an <a>, producing invalid <button><a> nesting and a real click
-// conflict (anchor navigates + bubbles to the button's toggle). Render the
-// raw URL text inside the trigger and let the anchor live only inside the
-// popover body, which is not nested in a button.
-function renderTriggerBody(
+function getVerifiedSourceHref(fact: MatrixFact): string | undefined {
+  if (fact.status !== "verified") {
+    return undefined;
+  }
+  const source = fact.source;
+  if (source === undefined) {
+    return undefined;
+  }
+
+  return sanitizeHref(source.url);
+}
+
+function renderSourceLinkBody(
   fact: MatrixFact,
   criterion: MatrixCriterion,
-  popoverBody: ReactNode,
+  body: ReactNode,
 ): ReactNode {
   if (
     criterion.valueType === "url" &&
@@ -924,40 +879,8 @@ function renderTriggerBody(
   ) {
     return fact.value;
   }
-  return popoverBody;
-}
 
-function renderPopoverSource(fact: MatrixFact, t: TranslateFn): ReactNode {
-  if (fact.status !== "verified") {
-    return null;
-  }
-  const source = fact.source;
-  if (source === undefined) {
-    return null;
-  }
-  const href = sanitizeHref(source.url);
-  if (href === undefined) {
-    return null;
-  }
-  const label = source.title?.trim() || t("matrixView.source");
-  return (
-    <span className="category-matrix-source">
-      <a
-        className="category-matrix-source-link"
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-      >
-        {label}
-      </a>
-      {source.accessedDate !== undefined &&
-        source.accessedDate.trim() !== "" && (
-          <span className="category-matrix-source-accessed">
-            {t("matrixView.accessedDate", { date: source.accessedDate })}
-          </span>
-        )}
-    </span>
-  );
+  return body;
 }
 
 function renderFactBody(

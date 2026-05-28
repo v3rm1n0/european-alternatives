@@ -95,6 +95,8 @@ vi.mock("react-i18next", () => {
     "matrixView.notApplicable": "Not applicable",
     "matrixView.source": "Source",
     "matrixView.accessedDate": "Accessed {{date}}",
+    "matrixView.openSourceLabel":
+      "Open source for {{product}} — {{criterion}}",
     "compare.selectedCount": "{{count}} card selected for comparison",
     "compare.open": "Compare",
     "compare.clear": "Clear comparison selection",
@@ -1056,12 +1058,12 @@ describe("browse matrix view mode", () => {
       'href="https://zeta-chat.example/encryption-report"',
     );
     expect(html).toMatch(
-      /<a[^>]*href="https:\/\/zeta-chat\.example\/encryption-report"[^>]*target="_blank"[^>]*rel="noopener noreferrer"[^>]*>Zeta encryption report<\/a>/u,
+      /<a[^>]*class="category-matrix-cell-source-link"[^>]*href="https:\/\/zeta-chat\.example\/encryption-report"[^>]*target="_blank"[^>]*rel="noopener noreferrer"[^>]*aria-label="Open source for Zeta Chat — End-to-end encryption"/u,
     );
-    expect(html).toContain("Zeta encryption report");
-    expect(html).toContain("Accessed 2026-05-24");
+    expect(html).not.toContain("Zeta encryption report");
+    expect(html).not.toContain("Accessed 2026-05-24");
     expect(html).toMatch(
-      /href="https:\/\/alpha-chat\.example\/security"[^>]*>Source<\/a>/u,
+      /class="category-matrix-cell-source-link"[^>]*href="https:\/\/alpha-chat\.example\/security"[^>]*aria-label="Open source for Alpha Chat — End-to-end encryption"/u,
     );
     expect(html).not.toContain(
       "Internal verification quote for Zeta encryption must stay private.",

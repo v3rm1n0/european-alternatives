@@ -50,6 +50,7 @@
     "notApplicable": "Not applicable",
     "source": "Source",
     "accessedDate": "Accessed {{date}}",
+    "openSourceLabel": "Open source for {{product}} — {{criterion}}",
     "legend": {
       "title": "Legend",
       "positive": "Positive / supported",

@@ -50,6 +50,7 @@
     "notApplicable": "Nicht anwendbar",
     "source": "Quelle",
     "accessedDate": "Abgerufen am {{date}}",
+    "openSourceLabel": "Quelle für {{product}} — {{criterion}} öffnen",
     "legend": {
       "title": "Legende",
       "positive": "Positiv / unterstützt",

@@ -26,6 +26,8 @@ vi.mock("react-i18next", () => {
       "matrixView.notApplicable": "Not applicable",
       "matrixView.source": "Source",
       "matrixView.accessedDate": "Accessed {{date}}",
+      "matrixView.openSourceLabel":
+        "Open source for {{product}} — {{criterion}}",
       "matrixView.legend.title": "Legend",
       "matrixView.legend.positive": "Positive / supported",
       "matrixView.legend.warning": "Caution",
@@ -260,28 +262,6 @@ async function renderMatrix(): Promise<string> {
   );
 }
 
-// Returns true if at least one popover container exists in the rendered
-// markup. Detection is structural — we look for the data-testid that the
-// implementation is required to expose on each popover surface.
-function hasPopoverContainer(html: string): boolean {
-  return /data-testid="category-matrix-cell-popover"/u.test(html);
-}
-
-// Returns a list of fixed-window slices (1500 chars) starting at each
-// popover container's data-testid attribute. The window is generous enough
-// to cover the popover's product/criterion/value/source block without
-// trying to balance nested tags by regex.
-function popoverWindows(html: string): string[] {
-  const windows: string[] = [];
-  const marker = 'data-testid="category-matrix-cell-popover"';
-  let index = html.indexOf(marker);
-  while (index !== -1) {
-    windows.push(html.slice(index, index + 1500));
-    index = html.indexOf(marker, index + marker.length);
-  }
-  return windows;
-}
-
 describe("matrix legend block", () => {
   it("renders a legend section listing each tone with both a label and an icon", async () => {
     const html = await renderMatrix();
@@ -369,54 +349,35 @@ describe("matrix legend block", () => {
   });
 });
 
-describe("matrix cell detail popover", () => {
-  it("renders every verified value cell as a focusable button with dialog popover semantics", async () => {
+describe("matrix cell source links", () => {
+  it("renders sourced verified fact cells as direct links to their public source", async () => {
     const html = await renderMatrix();
 
-    // The cell trigger must be a real <button> so Tab + Enter / Space work,
-    // and it must declare popover semantics so screen readers announce it.
+    // The matrix cell itself is the proof affordance: click the value and
+    // open the verified public source directly. No in-table popover is
+    // needed because product, criterion, and value are already visible.
     expect(html).toMatch(
-      /<button[^>]*type="button"[^>]*aria-haspopup="dialog"[^>]*aria-expanded="false"/u,
-    );
-
-    // The accessible name on at least one trigger must combine product +
-    // criterion so the user knows which intersection the details refer to.
-    expect(html).toMatch(
-      /<button[^>]*aria-label="[^"]*Zeta Chat[^"]*End-to-end encryption[^"]*"/u,
+      /<a[^>]*class="category-matrix-cell-source-link"[^>]*href="https:\/\/zeta-chat\.example\/encryption-report"[^>]*target="_blank"[^>]*rel="noopener noreferrer"[^>]*aria-label="Open source for Zeta Chat — End-to-end encryption"/u,
     );
     expect(html).toMatch(
-      /<button[^>]*aria-label="[^"]*Alpha Chat[^"]*Hosting region[^"]*"/u,
+      /<a[^>]*class="category-matrix-cell-source-link"[^>]*href="https:\/\/alpha-chat\.example\/security"[^>]*target="_blank"[^>]*rel="noopener noreferrer"[^>]*aria-label="Open source for Alpha Chat — End-to-end encryption"/u,
     );
   });
 
-  it("statically renders a popover container per cell carrying product, criterion, value, and safe source data", async () => {
+  it("does not render duplicated source metadata in the matrix body", async () => {
     const html = await renderMatrix();
 
-    expect(
-      hasPopoverContainer(html),
-      "at least one popover container must be in the DOM",
-    ).toBe(true);
-
-    const windows = popoverWindows(html);
-    const merged = windows.join("\n");
-
-    // The popover for the verified Zeta e2ee cell must expose the public
-    // source link, accessed date, product name, and criterion label.
-    expect(merged).toContain("Zeta Chat");
-    expect(merged).toContain("End-to-end encryption");
-    expect(merged).toContain(
-      'href="https://zeta-chat.example/encryption-report"',
-    );
-    expect(merged).toContain("Zeta encryption report");
-    expect(merged).toContain("Accessed 2026-05-24");
+    expect(html).toContain("Zeta Chat");
+    expect(html).toContain("End-to-end encryption");
+    expect(html).not.toContain("Zeta encryption report");
+    expect(html).not.toContain("Accessed 2026-05-24");
   });
 
   it("never renders an unsafe javascript: source URL as a clickable link anywhere in the matrix", async () => {
     const html = await renderMatrix();
 
     // Defence-in-depth: every URL must route through sanitizeHref. If the
-    // scheme is rejected, no <a href> may be emitted — neither inside a
-    // popover nor anywhere else in the rendered matrix.
+    // scheme is rejected, no <a href> may be emitted anywhere in the matrix.
     expect(html).not.toContain('href="javascript:alert(99)"');
     expect(html).not.toContain("Unsafe Alpha hosting source");
     expect(html).not.toContain("Accessed 2026-05-23");
@@ -455,27 +416,16 @@ describe("matrix cell detail popover", () => {
     }
   });
 
-  it("pins popover i18n copy in both browse locales", () => {
-    const enPopover = (browseEn.matrixView as Record<string, unknown>)
-      .popover as Record<string, string> | undefined;
-    const dePopover = (browseDe.matrixView as Record<string, unknown>)
-      .popover as Record<string, string> | undefined;
+  it("pins direct-source i18n copy in both browse locales", () => {
+    const enMatrix = browseEn.matrixView as Record<string, unknown>;
+    const deMatrix = browseDe.matrixView as Record<string, unknown>;
 
-    expect(enPopover).toBeDefined();
-    expect(dePopover).toBeDefined();
-
-    const requiredKeys = ["openLabel", "close"] as const;
-
-    for (const key of requiredKeys) {
-      expect(
-        enPopover?.[key],
-        `EN browse.matrixView.popover.${key} must be defined`,
-      ).toBeTruthy();
-      expect(
-        dePopover?.[key],
-        `DE browse.matrixView.popover.${key} must be defined`,
-      ).toBeTruthy();
-    }
+    expect(enMatrix.openSourceLabel).toBe(
+      "Open source for {{product}} — {{criterion}}",
+    );
+    expect(deMatrix.openSourceLabel).toBe(
+      "Quelle für {{product}} — {{criterion}} öffnen",
+    );
   });
 });
 
@@ -543,264 +493,54 @@ describe("matrix cell color-independence", () => {
   });
 });
 
-describe("matrix cell popover wiring", () => {
-  it("styles the popover as an opaque high-contrast surface over the dense table", () => {
+describe("matrix cell source-link wiring", () => {
+  it("styles sourced matrix cells as direct link targets without changing chip colors", () => {
     const css = readFileSync(
       new URL("../src/index.css", import.meta.url),
       "utf8",
     );
-    const rule = css.match(
-      /\.category-matrix-cell-popover\s*\{[\s\S]*?\n\}/u,
-    )?.[0];
+    const rule = css.match(/\.category-matrix-cell-source-link\s*\{[\s\S]*?\n\}/u)?.[0];
 
-    expect(rule, "expected the popover CSS rule to exist").toBeDefined();
-    expect(rule).toMatch(/background(?:-color)?\s*:\s*#[0-9a-f]{6}/iu);
-    expect(rule).toMatch(/opacity\s*:\s*1/u);
-    expect(rule).toMatch(/z-index\s*:\s*1000/u);
-    expect(rule).toMatch(/box-shadow\s*:/u);
-  });
-
-  it("lifts the active matrix cell above neighboring cells when its popover is open", () => {
-    const css = readFileSync(
-      new URL("../src/index.css", import.meta.url),
-      "utf8",
-    );
-
+    expect(rule, "expected the source-link CSS rule to exist").toBeDefined();
+    expect(rule).toMatch(/display\s*:\s*inline-flex/u);
+    expect(rule).toMatch(/text-decoration\s*:\s*none/u);
+    expect(rule).toMatch(/cursor\s*:\s*pointer/u);
     expect(css).toMatch(
-      /\.category-matrix-view-fact-cell:has\(\.category-matrix-cell--open\)\s*\{[\s\S]*?z-index\s*:\s*200/u,
-    );
-    expect(css).toMatch(
-      /\.category-matrix-cell--open\s*\{[\s\S]*?z-index\s*:\s*1000/u,
+      /\.category-matrix-cell-source-link:focus-visible\s*\{[\s\S]*?outline\s*:\s*2px\s+solid\s+var\(--accent-primary\)/u,
     );
   });
 
-  it("wires aria-controls on every trigger to a popover container whose id matches", async () => {
+  it("does not render popover markup or dialog triggers", async () => {
     const html = await renderMatrix();
 
-    // ARIA contract: the cell trigger must point its aria-controls at the
-    // popover surface it opens. A drifted id (e.g. trigger pointing at a
-    // non-existent id, or popover missing its id) silently breaks screen
-    // reader announcement even though the cell still "looks right".
-    const triggerControls = Array.from(
-      html.matchAll(/<button[^>]*aria-controls="([^"]+)"[^>]*>/gu),
-    ).map((match) => match[1]);
-
-    expect(
-      triggerControls.length,
-      "expected at least one trigger button with aria-controls",
-    ).toBeGreaterThan(0);
-
-    for (const controlledId of triggerControls) {
-      // Each controlled id must point at a popover container actually in
-      // the DOM. We assert by direct string presence to keep the test
-      // resilient to attribute ordering.
-      expect(
-        html.includes(`id="${controlledId}"`),
-        `aria-controls="${controlledId}" must resolve to an element id in the DOM`,
-      ).toBe(true);
-    }
-  });
-
-  it("declares role=dialog on every popover container so screen readers announce the surface", async () => {
-    const html = await renderMatrix();
-
-    // The trigger advertises aria-haspopup="dialog"; the popover container
-    // itself must therefore carry role="dialog" so the announcement matches
-    // the affordance.
-    const popoverContainers = html.match(
-      /<[^>]*data-testid="category-matrix-cell-popover"[^>]*>/gu,
-    );
-
-    expect(
-      popoverContainers,
-      "expected at least one popover container",
-    ).not.toBeNull();
-
-    for (const tag of popoverContainers ?? []) {
-      expect(
-        /role="dialog"/u.test(tag),
-        `popover container must carry role="dialog" (got: ${tag})`,
-      ).toBe(true);
-    }
-  });
-
-  it("renders every popover container as initially hidden so cells do not all expand at once", async () => {
-    const html = await renderMatrix();
-
-    // Critical regression guard: if the implementation forgets the `hidden`
-    // attribute (or renders the popover only when open), users either see
-    // every cell's popover stacked on initial paint, or the static SSR
-    // safety assertions stop being load-bearing. Either failure mode is
-    // catastrophic, so we assert the closed-state contract directly.
-    const popoverContainers = html.match(
-      /<[^>]*data-testid="category-matrix-cell-popover"[^>]*>/gu,
-    );
-
-    expect(popoverContainers).not.toBeNull();
-    expect(popoverContainers?.length ?? 0).toBeGreaterThan(0);
-
-    for (const tag of popoverContainers ?? []) {
-      // React serializes the boolean attribute as bare `hidden` or
-      // `hidden=""`; accept either form.
-      expect(
-        /\shidden(?:=""|=|\s|>)/u.test(tag),
-        `closed popover must carry the hidden attribute (got: ${tag})`,
-      ).toBe(true);
-    }
-
-    // aria-expanded on every trigger must agree with the hidden popover.
+    expect(html).not.toContain("category-matrix-cell-popover");
+    expect(html).not.toContain("category-matrix-cell-trigger");
+    expect(html).not.toContain('role="dialog"');
+    expect(html).not.toMatch(/aria-haspopup="dialog"/u);
+    expect(html).not.toMatch(/aria-controls=/u);
     expect(html).not.toMatch(/aria-expanded="true"/u);
   });
 
-  it("renders a close affordance inside every popover so keyboard users can dismiss it", async () => {
+  it("renders unverified and not_applicable cells as static status chips without source links", async () => {
     const html = await renderMatrix();
 
-    // Acceptance criterion: keyboard users must be able to open and close
-    // cell details. The static contract requires a focusable <button> with
-    // the localized close label inside the popover surface.
-    const windows = popoverWindows(html);
-    expect(windows.length, "expected at least one popover window").toBeGreaterThan(
-      0,
+    expect(html).toContain("Data export formats");
+    expect(html).toContain("Unverified");
+    expect(html).toContain("Not applicable");
+    expect(html).not.toContain(
+      'href="https://zeta-chat.example/export-formats"',
     );
-
-    for (const window of windows) {
-      expect(
-        /<button[^>]*>[\s\S]{0,200}?Close[\s\S]{0,200}?<\/button>/u.test(window),
-        "each popover must contain a Close <button> for keyboard dismissal",
-      ).toBe(true);
-    }
+    expect(html).not.toContain('href="https://alpha-chat.example/export-na"');
   });
 
-  it("wraps unverified and not_applicable cells in the same trigger + popover scaffold (without source affordances)", async () => {
+  it("keeps url-valueType cells as direct anchors when the value itself is the useful URL", async () => {
     const html = await renderMatrix();
 
-    // Even though unverified / not_applicable cells must not show a source
-    // link, the keyboard contract still applies — users must be able to
-    // open a detail surface that names the product + criterion, so they
-    // know exactly which intersection is unverified.
-    expect(html).toMatch(
-      /<button[^>]*aria-label="[^"]*Zeta Chat[^"]*Data export formats[^"]*"/u,
-    );
-
-    // The popover surface for these statuses must still be in the DOM and
-    // must still carry the product + criterion identification, just without
-    // any source <a> tag for the suppressed URL.
-    const windows = popoverWindows(html);
-    const merged = windows.join("\n");
-
-    expect(merged).toContain("Data export formats");
-    // Suppressed-source URLs must not appear inside any popover window.
-    for (const window of windows) {
-      expect(window).not.toContain(
-        'href="https://zeta-chat.example/export-formats"',
-      );
-      expect(window).not.toContain(
-        'href="https://alpha-chat.example/export-na"',
-      );
-    }
-  });
-
-  it("renders url-valueType cells as plain text in the trigger button and as a real anchor only inside the popover", async () => {
-    const html = await renderMatrix();
-
-    // Regression guard: the cell trigger is a <button>, whose HTML5 content
-    // model forbids interactive descendants. Rendering an <a href> inside
-    // it (which is what the URL-typed cell renderer normally produces)
-    // would be invalid HTML, trip React's validateDOMNesting, AND cause a
-    // real click conflict (anchor navigates + bubbles up to the button's
-    // popover toggle). The trigger must therefore show the raw URL as
-    // plain text; the real anchor lives only inside the popover surface.
-    const triggerRegex =
-      /<button[^>]*class="category-matrix-cell-trigger"[^>]*>([\s\S]*?)<\/button>/gu;
-    const triggers = Array.from(html.matchAll(triggerRegex));
-
-    expect(
-      triggers.length,
-      "expected at least one cell trigger button",
-    ).toBeGreaterThan(0);
-
-    for (const [, triggerBody] of triggers) {
-      expect(
-        triggerBody,
-        "cell trigger button must not contain an <a> descendant (invalid <button><a> nesting)",
-      ).not.toMatch(/<a[\s>]/u);
-    }
-
-    // The verified URL must appear as plain text inside at least one trigger.
-    const triggerBodies = triggers.map(([, body]) => body).join("\n");
-    expect(triggerBodies).toContain("https://zeta-chat.example/privacy");
-
-    // The popover for a verified url-valueType cell must still expose the
-    // real clickable anchor — that affordance moves from the cell to the
-    // popover instead of disappearing entirely.
     expect(html).toMatch(
       /<a[^>]*href="https:\/\/zeta-chat\.example\/privacy"[^>]*target="_blank"[^>]*>/u,
     );
-  });
-
-  it("renders the unverified status text inside the popover body for unverified cells", async () => {
-    const html = await renderMatrix();
-
-    // The popover body for an unverified cell must communicate the status
-    // so the user knows why no value is shown. Asserting only that the
-    // criterion label appears (which the earlier test already does) is not
-    // enough — the popover could lose its body and still pass that check.
-    const windows = popoverWindows(html);
-    const merged = windows.join("\n");
-
-    expect(merged).toContain("Data export formats");
-    // At least one popover must carry the "Unverified" body text, anchored
-    // inside the popover surface (not just somewhere else in the matrix
-    // markup that happens to share the same i18n string).
-    const hasUnverifiedBody = windows.some((window) =>
-      window.includes("Unverified"),
-    );
-    expect(
-      hasUnverifiedBody,
-      "at least one popover surface must carry the 'Unverified' body text",
-    ).toBe(true);
-  });
-
-  it("renders the not-applicable status text inside the popover body for not_applicable cells", async () => {
-    const html = await renderMatrix();
-
-    // Same regression guard as above, mirrored for not_applicable. Alpha
-    // export_formats is the fixture's not_applicable cell.
-    const windows = popoverWindows(html);
-    const hasNotApplicableBody = windows.some((window) =>
-      window.includes("Not applicable"),
-    );
-    expect(
-      hasNotApplicableBody,
-      "at least one popover surface must carry the 'Not applicable' body text",
-    ).toBe(true);
-  });
-
-  it("falls back to the localized 'Source' label when the source has no title", async () => {
-    const html = await renderMatrix();
-
-    // Alpha e2ee has a verified source with only a URL (no title). The
-    // popover must still surface a clickable link, using the localized
-    // 'Source' label as the anchor text rather than rendering the bare
-    // URL or no text at all. This exercises the
-    // `source.title?.trim() || t("matrixView.source")` fallback.
     expect(html).toMatch(
-      /<a[^>]*href="https:\/\/alpha-chat\.example\/security"[^>]*>\s*Source\s*<\/a>/u,
+      /<a[^>]*href="https:\/\/alpha-chat\.example\/privacy"[^>]*target="_blank"[^>]*>/u,
     );
-  });
-
-  it("opens verified source links in a new tab with safe rel attributes", async () => {
-    const html = await renderMatrix();
-
-    // Cross-window safety: every external source link must carry both
-    // target="_blank" AND rel="noopener noreferrer". A regression here
-    // exposes window.opener to the linked site (reverse-tabnabbing).
-    const sourceLink = html.match(
-      /<a[^>]*href="https:\/\/zeta-chat\.example\/encryption-report"[^>]*>/u,
-    );
-
-    expect(sourceLink, "expected the Zeta encryption-report source link").not.toBeNull();
-    expect(sourceLink?.[0]).toContain('target="_blank"');
-    expect(sourceLink?.[0]).toContain('rel="noopener noreferrer"');
   });
 });

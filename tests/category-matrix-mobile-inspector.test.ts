@@ -32,6 +32,8 @@ vi.mock("react-i18next", () => {
       "matrixView.notApplicable": "Not applicable",
       "matrixView.source": "Source",
       "matrixView.accessedDate": "Accessed {{date}}",
+      "matrixView.openSourceLabel":
+        "Open source for {{product}} — {{criterion}}",
       "matrixView.legend.title": "Legend",
       "matrixView.legend.positive": "Positive / supported",
       "matrixView.legend.warning": "Caution",
@@ -728,94 +730,33 @@ describe("mobile matrix inspector — structure", () => {
   });
 });
 
-describe("mobile matrix inspector — popover id uniqueness", () => {
-  it("scopes inspector popover ids so they do not collide with the desktop table", async () => {
-    // Both trees ship in the same SSR pass for the responsive CSS swap.
-    // Without a scope suffix, `category-matrix-cell-popover-${alt}-${crit}`
-    // would be emitted twice for the same fact (once in the table, once
-    // in the inspector), producing duplicate element ids — invalid HTML
-    // and ambiguous aria-controls resolution. The desktop wiring test
-    // (`matrix cell popover wiring`) still passes against duplicates
-    // because each id resolves to *an* element, so this contract needs
-    // its own guard.
-    const html = await renderMatrix();
-
-    const popoverIds = Array.from(
-      html.matchAll(
-        /<[^>]*data-testid="category-matrix-cell-popover"[^>]*\sid="([^"]+)"[^>]*>/gu,
-      ),
-    ).map((match) => match[1]);
-    const idsFromIdFirst = Array.from(
-      html.matchAll(
-        /<[^>]*\sid="([^"]+)"[^>]*data-testid="category-matrix-cell-popover"[^>]*>/gu,
-      ),
-    ).map((match) => match[1]);
-    const allIds = [...popoverIds, ...idsFromIdFirst];
-
-    expect(
-      allIds.length,
-      "expected at least one popover container with an id",
-    ).toBeGreaterThan(0);
-
-    const duplicates = allIds.filter(
-      (id, index) => allIds.indexOf(id) !== index,
-    );
-    expect(
-      duplicates,
-      `popover ids must be unique across the dual SSR trees, found duplicates: ${duplicates.join(", ")}`,
-    ).toEqual([]);
-  });
-
-  it("emits mobile-scoped popover ids inside the inspector subtree", async () => {
-    // Regression guard for the `idScope="mobile"` suffix specifically.
-    // The inspector subtree must contain at least one popover id ending
-    // in `-mobile`; if the implementation drops the suffix, the dual-tree
-    // ids collapse back into a collision.
+describe("mobile matrix inspector — direct source links", () => {
+  it("does not emit popover ids or dialog controls in the inspector subtree", async () => {
     const html = await renderMatrix();
     const inspector = inspectorSubtree(html);
 
     expect(
       inspector,
-      "inspector subtree must be present before mobile ids can be vetted",
+      "inspector subtree must be present before popover removal can be vetted",
     ).not.toBe("");
+    expect(inspector).not.toContain("category-matrix-cell-popover");
+    expect(inspector).not.toContain("category-matrix-cell-trigger");
+    expect(inspector).not.toMatch(/aria-controls=/u);
+    expect(inspector).not.toMatch(/aria-haspopup="dialog"/u);
+  });
+
+  it("keeps inspector source links self-contained and safely labelled", async () => {
+    const html = await renderMatrix();
+    const inspector = inspectorSubtree(html);
+
+    expect(
+      inspector,
+      "inspector subtree must be present before source links can be vetted",
+    ).not.toBe("");
+
     expect(inspector).toMatch(
-      /id="category-matrix-cell-popover-[^"]+-mobile"/u,
+      /<a[^>]*class="category-matrix-cell-source-link"[^>]*href="https:\/\/zeta-chat\.example\/encryption-report"[^>]*aria-label="Open source for Zeta Chat — End-to-end encryption"/u,
     );
-  });
-
-  it("wires inspector trigger aria-controls to its mobile-scoped popover id", async () => {
-    // ARIA contract: the trigger's aria-controls must resolve to an
-    // element id actually present in the same subtree. If the inspector
-    // trigger points at the desktop popover's id (no -mobile suffix), a
-    // screen reader following aria-controls would jump out of the
-    // inspector entirely.
-    const html = await renderMatrix();
-    const inspector = inspectorSubtree(html);
-
-    expect(
-      inspector,
-      "inspector subtree must be present before aria-controls can be vetted",
-    ).not.toBe("");
-
-    const triggerControls = Array.from(
-      inspector.matchAll(/<button[^>]*aria-controls="([^"]+)"[^>]*>/gu),
-    ).map((match) => match[1]);
-
-    expect(
-      triggerControls.length,
-      "expected at least one inspector trigger button with aria-controls",
-    ).toBeGreaterThan(0);
-
-    for (const controlledId of triggerControls) {
-      expect(
-        controlledId.endsWith("-mobile"),
-        `inspector aria-controls="${controlledId}" must end with -mobile to avoid colliding with the desktop popover`,
-      ).toBe(true);
-      expect(
-        inspector.includes(`id="${controlledId}"`),
-        `inspector aria-controls="${controlledId}" must resolve to an element id in the same subtree`,
-      ).toBe(true);
-    }
   });
 });
 
@@ -824,7 +765,7 @@ describe("mobile matrix inspector — color-independence chips", () => {
     // Acceptance criterion: "Green/yellow/red/neutral states remain easy to
     // spot." The inspector must reuse `category-matrix-fact--*` and
     // `category-matrix-option--*` so the color-independence contract from
-    // the desktop popover tests automatically applies (icons + tone classes).
+    // the desktop matrix tests automatically applies (icons + tone classes).
     // The inspector is focused on the primary alternative, so we exercise
     // both products by toggling visibleAlternativeIds (which seeds the
     // primary state) — Zeta surfaces the negative / warning tones, Alpha
@@ -848,7 +789,7 @@ describe("mobile matrix inspector — color-independence chips", () => {
 
   it("renders an inline SVG icon on every verdict chip inside the inspector", async () => {
     // Without an icon paired with the tone class, the chip degrades to
-    // color-only — a WCAG 1.4.1 failure. The desktop popover tests pin this
+    // color-only — a WCAG 1.4.1 failure. The desktop matrix tests pin this
     // for the table; the same contract applies to the inspector. Because
     // the inspector focuses on a single primary at a time, we render twice
     // so both verdict tones are exercised.
@@ -870,10 +811,9 @@ describe("mobile matrix inspector — color-independence chips", () => {
 
 describe("mobile matrix inspector — source safety and audit suppression", () => {
   it("renders verified source links inside the inspector with target=_blank and a safe rel", async () => {
-    // Compact source detail is required by AC ("Source detail behavior
-    // remains available but compact"). When the inspector surfaces a source
-    // link, it must follow the same cross-window-safety contract as the
-    // desktop popover — target="_blank" AND rel="noopener noreferrer".
+    // When the inspector surfaces a source link, it must follow the same
+    // cross-window-safety contract as the desktop matrix: target="_blank"
+    // AND rel="noopener noreferrer".
     const html = await renderMatrix();
     const inspector = inspectorSubtree(html);
 
@@ -916,7 +856,7 @@ describe("mobile matrix inspector — source safety and audit suppression", () =
   });
 
   it("omits source-link anchors for unverified and not_applicable inspector cells", async () => {
-    // The desktop popover already pins this contract; the inspector must
+    // The desktop matrix already pins this contract; the inspector must
     // mirror it. A cell whose status is unverified or not_applicable has
     // no public claim and therefore no citation — the URL must be dropped
     // even though the inspector still surfaces the criterion label.
@@ -995,17 +935,12 @@ describe("mobile matrix inspector — source safety and audit suppression", () =
 });
 
 describe("mobile matrix inspector — accessibility", () => {
-  it("renders a localized close affordance for the compact source surface", async () => {
-    // Acceptance criterion: "keyboard/touch accessibility are respected" +
-    // "Source detail behavior remains available but compact". The compact
-    // source surface (bottom sheet or inline expander, implementation's
-    // choice) must contain a focusable <button> with the localized close
-    // label so keyboard users can dismiss it without trapping focus.
+  it("renders sourced cells as keyboard-focusable source links", async () => {
     const html = await renderMatrix();
     const inspector = inspectorSubtree(html);
 
     expect(inspector).toMatch(
-      /<button[^>]*>[\s\S]{0,200}?Close[\s\S]{0,200}?<\/button>/u,
+      /<a[^>]*class="category-matrix-cell-source-link"[^>]*href="https:\/\/zeta-chat\.example\/encryption-report"[^>]*target="_blank"[^>]*rel="noopener noreferrer"[^>]*>/u,
     );
   });
 
