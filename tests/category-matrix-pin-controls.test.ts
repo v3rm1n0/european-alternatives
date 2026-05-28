@@ -635,33 +635,17 @@ describe("matrix pin controls — i18n parity", () => {
     }
   });
 
-  it("keeps the new German pin/focus strings ASCII-only (matrix-block convention)", () => {
+  it("uses native German umlauts for pin and focus strings", () => {
     const deToolbar = (browseDe.matrixView as Record<string, unknown>)
       .toolbar as Record<string, string> | undefined;
     const deMatrix = browseDe.matrixView as Record<string, unknown>;
     expect(deToolbar).toBeDefined();
 
-    // The German matrix block transliterates umlauts (`unterstuetzt`, not
-    // `unterstützt`). Enforce the same convention on the new keys so a
-    // regression here surfaces immediately.
-    const umlautPattern = /[äöüÄÖÜß]/u;
-    const toolbarKeys = ["focusOnly", "clearPins", "pinnedCount"] as const;
-    for (const key of toolbarKeys) {
-      const value = deToolbar?.[key];
-      if (value === undefined) continue;
-      expect(
-        umlautPattern.test(String(value)),
-        `DE browse.matrixView.toolbar.${key} must not contain raw umlauts: ${String(value)}`,
-      ).toBe(false);
-    }
-    for (const key of ["pinAction", "unpinAction"] as const) {
-      const value = deMatrix[key];
-      if (typeof value !== "string") continue;
-      expect(
-        umlautPattern.test(value),
-        `DE browse.matrixView.${key} must not contain raw umlauts: ${value}`,
-      ).toBe(false);
-    }
+    expect(deToolbar?.focusOnly).toBe("Fokus auf Angeheftete");
+    expect(deToolbar?.clearPins).toBe("Anheftungen löschen");
+    expect(deToolbar?.pinnedCount).toBe("{{count}} angeheftet");
+    expect(deMatrix.pinAction).toBe("{{product}} anheften");
+    expect(deMatrix.unpinAction).toBe("{{product}} lösen");
   });
 });
 

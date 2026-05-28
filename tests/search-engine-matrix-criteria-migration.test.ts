@@ -77,7 +77,7 @@ const expectedGroups = [
   {
     key: "ads_commercial",
     labelEn: "Ads & Commercial Model",
-    germanHints: ["anzeigen", "geschaeftsmodell"],
+    germanHints: ["anzeigen", "geschäftsmodell"],
     sortOrder: 600,
   },
   {
@@ -470,7 +470,7 @@ const expectedCriteria: CriterionExpectation[] = [
     key: "self_hosting_available",
     groupKey: "access_integrations",
     labelEn: "Self-hosting available",
-    germanHints: ["selbsthosting", "verfuegbar"],
+    germanHints: ["selbsthosting", "verfügbar"],
     valueType: "boolean",
     semantics: "tradeoff",
     filterMode: "optional",

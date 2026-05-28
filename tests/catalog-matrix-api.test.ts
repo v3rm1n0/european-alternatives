@@ -137,7 +137,7 @@ const matrixScenario: MatrixScenario = {
       helpText: "Where account data is primarily hosted",
       help_text: "Where account data is primarily hosted",
       help_text_en: "Where account data is primarily hosted",
-      help_text_de: "Wo Kontodaten hauptsaechlich gehostet werden",
+      help_text_de: "Wo Kontodaten hauptsächlich gehostet werden",
       value_type: "enum",
       semantics: "informational",
       filter_mode: "optional",
@@ -150,11 +150,11 @@ const matrixScenario: MatrixScenario = {
       criterion_key: "e2ee",
       label: "End-to-end encryption",
       label_en: "End-to-end encryption",
-      label_de: "Ende-zu-Ende-Verschluesselung",
+      label_de: "Ende-zu-Ende-Verschlüsselung",
       helpText: "Whether private chats are end-to-end encrypted",
       help_text: "Whether private chats are end-to-end encrypted",
       help_text_en: "Whether private chats are end-to-end encrypted",
-      help_text_de: "Ob private Chats Ende-zu-Ende-verschluesselt sind",
+      help_text_de: "Ob private Chats Ende-zu-Ende-verschlüsselt sind",
       value_type: "boolean",
       semantics: "beneficial",
       filter_mode: "must_match",
@@ -882,7 +882,7 @@ describe("catalog matrix API endpoint", () => {
     expect(payload.data.groups[0]?.criteria[0]).toMatchObject({
       id: "hosting_region",
       label: "Hosting-Region",
-      helpText: "Wo Kontodaten hauptsaechlich gehostet werden",
+      helpText: "Wo Kontodaten hauptsächlich gehostet werden",
     });
     expect(payload.data.groups[0]?.criteria[0]?.options).toEqual([
       { id: "eu", label: "EU", displayTone: "positive" },

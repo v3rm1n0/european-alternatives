@@ -696,24 +696,13 @@ describe("matrix decision toggles — i18n key parity", () => {
     }
   });
 
-  it("keeps the German toolbar bundle ASCII-only for umlauts (matches existing convention)", () => {
+  it("uses native German umlauts for toggle copy", () => {
     const deToolbar = (browseDe.matrixView as Record<string, unknown>)
       .toolbar as Record<string, string> | undefined;
     expect(deToolbar).toBeDefined();
 
-    // The German matrix block uses ASCII transliterations
-    // (`unterstuetzt`, not `unterstützt`). New toggle copy must follow
-    // suit — there is an existing test enforcing this for the whole
-    // toolbar block; this assertion specifically pins the new keys.
-    const umlautPattern = /[äöüÄÖÜß]/u;
-    for (const key of ["showDifferences", "hideUnverified"] as const) {
-      const value = deToolbar?.[key];
-      if (value === undefined) continue;
-      expect(
-        umlautPattern.test(String(value)),
-        `DE browse.matrixView.toolbar.${key} must not contain raw umlauts: ${String(value)}`,
-      ).toBe(false);
-    }
+    expect(deToolbar?.showDifferences).toBe("Nur Unterschiede anzeigen");
+    expect(deToolbar?.hideUnverified).toBe("Unbestätigte ausblenden");
   });
 
   it("does not introduce a `matrixFilters` namespace (panel-removal contract)", () => {

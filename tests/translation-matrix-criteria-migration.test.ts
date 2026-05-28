@@ -1100,21 +1100,17 @@ describe("translation matrix criteria migration", () => {
     expect(optionRows).toHaveLength(expectedTotal);
   });
 
-  it("uses ASCII replacements for German umlauts and eszett in all localized text", () => {
-    const unicodeUmlautPattern = /[äöüÄÖÜß]/;
+  it("uses native German umlauts and eszett in localized text", () => {
+    const asciiUmlautFallbackPattern =
+      /\b(?:fuer|unterstuetz|verfueg|verschluess|schluess|vollstaend|standardmaess|groess|gross|ausser|oeff|ueber|aender|primaer|sphaer|souveraen|foeder|domaen|erklaer|pruef|faeh|moeg|geraet|rueck|gaeng|laeuf|waehr|koenn|fuehr|fueg|erfuell|frueh|spaet|loesch|loes|zugaeng|abhaeng|traeg|geschaeft|schuetz|guelt|itaet|saech|schraenk|haeufig|vorschlaeg|temporaer|verkaeuf|gelaend|anfaeng|sued|europae|naech|foerm|koenig|jaehr|stuend|populaer|woech|koerb|koern|schaetz|bloeck|binaer|werkstaett|erzaehl|titelsprueng|anhaeng|bestaet|kanael|raeum|paed|prae|persoen|plaetz|wuerd|spruech|saetz|oepnv|behoerd|laess|hoer|mueh|guet|kuen|abzueg|fluess|stuerz|gruen|gerae|huell|regulaer|unerwuensch|gebuehr|stuetz|massstab|massnahm|massgeschneid|fuss|strass)\w*/i;
+    const localizedText = [
+      ...parseGroupRows().flatMap((row) => [row.labelDe, row.descriptionDe]),
+      ...parseCriterionRows().flatMap((row) => [row.labelDe, row.helpTextDe]),
+      ...parseOptionRows().map((row) => row.labelDe),
+    ];
 
-    for (const row of parseGroupRows()) {
-      expect(row.labelDe).not.toMatch(unicodeUmlautPattern);
-      expect(row.descriptionDe).not.toMatch(unicodeUmlautPattern);
-    }
-
-    for (const row of parseCriterionRows()) {
-      expect(row.labelDe).not.toMatch(unicodeUmlautPattern);
-      expect(row.helpTextDe).not.toMatch(unicodeUmlautPattern);
-    }
-
-    for (const row of parseOptionRows()) {
-      expect(row.labelDe).not.toMatch(unicodeUmlautPattern);
+    for (const value of localizedText) {
+      expect(value).not.toMatch(asciiUmlautFallbackPattern);
     }
   });
 

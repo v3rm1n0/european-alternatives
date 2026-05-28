@@ -777,22 +777,18 @@ describe("matrix toolbar — i18n key parity", () => {
     }
   });
 
-  it("keeps the German toolbar bundle ASCII-only for umlauts (matches existing matrix block convention)", () => {
+  it("uses native German umlauts in the toolbar bundle", () => {
     const deToolbar = (browseDe.matrixView as Record<string, unknown>)
       .toolbar as Record<string, string> | undefined;
 
     expect(deToolbar).toBeDefined();
 
-    // The German matrix block uses ASCII transliterations (e.g.
-    // `unterstuetzt`, not `unterstützt`) — the new toolbar keys must
-    // follow the same convention.
-    const umlautPattern = /[äöüÄÖÜß]/u;
-    for (const [key, value] of Object.entries(deToolbar ?? {})) {
-      expect(
-        umlautPattern.test(String(value)),
-        `DE browse.matrixView.toolbar.${key} must not contain raw umlauts (use ASCII transliteration): ${String(value)}`,
-      ).toBe(false);
-    }
+    expect(deToolbar?.clearSearch).toBe("Kriteriensuche löschen");
+    expect(deToolbar?.emptyBody).toContain("zurück");
+    expect(deToolbar?.emptyBodyWithToggles).toContain("zurück");
+    expect(deToolbar?.hideUnverified).toBe("Unbestätigte ausblenden");
+    expect(deToolbar?.resetToggles).toBe("Schalter zurücksetzen");
+    expect(deToolbar?.clearPins).toBe("Anheftungen löschen");
   });
 
   it("ships a `matchCount` key in both locale bundles so the live counter can interpolate", () => {
