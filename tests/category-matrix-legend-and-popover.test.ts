@@ -124,6 +124,23 @@ function fixture(): CategoryMatrixApiResponse {
           label: "Privacy policy",
           valueType: "url",
         }),
+        criterion("supported_platforms", "multi_select", {
+          label: "Supported platforms",
+          valueType: "multi_enum",
+          options: [
+            { id: "android", label: "Android", displayTone: "neutral" },
+            { id: "ios", label: "iOS", displayTone: "neutral" },
+            { id: "linux", label: "Linux", displayTone: "positive" },
+          ],
+        }),
+        criterion("reactions_threads", "multi_select", {
+          label: "Reactions and threads",
+          valueType: "multi_enum",
+          options: [
+            { id: "reactions", label: "Reactions", displayTone: "positive" },
+            { id: "threads", label: "Threads", displayTone: "positive" },
+          ],
+        }),
       ],
     },
   ];
@@ -157,6 +174,14 @@ function fixture(): CategoryMatrixApiResponse {
         status: "verified",
         value: "https://zeta-chat.example/privacy",
       },
+      supported_platforms: {
+        status: "verified",
+        value: ["android", "linux"],
+      },
+      reactions_threads: {
+        status: "verified",
+        value: ["reactions"],
+      },
     }),
     matrixAlternative("alpha-chat", "Alpha Chat", {
       e2ee: {
@@ -188,6 +213,14 @@ function fixture(): CategoryMatrixApiResponse {
       privacy_policy: {
         status: "verified",
         value: "https://alpha-chat.example/privacy",
+      },
+      supported_platforms: {
+        status: "verified",
+        value: ["ios"],
+      },
+      reactions_threads: {
+        status: "verified",
+        value: [],
       },
     }),
   ];
@@ -491,6 +524,23 @@ describe("matrix cell color-independence", () => {
       /<[^>]*category-matrix-option--warning[^>]*aria-label="Caution: Global"/u,
     );
   });
+
+  it("renders coverage rows with supported options green and missing options red", async () => {
+    const html = await renderMatrix();
+
+    expect(html).toMatch(
+      /category-matrix-option--positive[^>]*aria-label="Positive \/ supported: Android"/u,
+    );
+    expect(html).toMatch(
+      /category-matrix-option--negative[^>]*aria-label="Negative \/ not supported: iOS"/u,
+    );
+    expect(html).toMatch(
+      /category-matrix-option--positive[^>]*aria-label="Positive \/ supported: Reactions"/u,
+    );
+    expect(html).toMatch(
+      /category-matrix-option--negative[^>]*aria-label="Negative \/ not supported: Threads"/u,
+    );
+  });
 });
 
 describe("matrix cell popover wiring", () => {
@@ -506,7 +556,22 @@ describe("matrix cell popover wiring", () => {
     expect(rule, "expected the popover CSS rule to exist").toBeDefined();
     expect(rule).toMatch(/background(?:-color)?\s*:\s*#[0-9a-f]{6}/iu);
     expect(rule).toMatch(/opacity\s*:\s*1/u);
+    expect(rule).toMatch(/z-index\s*:\s*1000/u);
     expect(rule).toMatch(/box-shadow\s*:/u);
+  });
+
+  it("lifts the active matrix cell above neighboring cells when its popover is open", () => {
+    const css = readFileSync(
+      new URL("../src/index.css", import.meta.url),
+      "utf8",
+    );
+
+    expect(css).toMatch(
+      /\.category-matrix-view-fact-cell:has\(\.category-matrix-cell--open\)\s*\{[\s\S]*?z-index\s*:\s*200/u,
+    );
+    expect(css).toMatch(
+      /\.category-matrix-cell--open\s*\{[\s\S]*?z-index\s*:\s*1000/u,
+    );
   });
 
   it("wires aria-controls on every trigger to a popover container whose id matches", async () => {

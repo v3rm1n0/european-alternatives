@@ -1945,6 +1945,11 @@ button:disabled {
 .category-matrix-view-fact-cell {
   min-width: 11rem;
   max-width: 16rem;
+  position: relative;
+}
+
+.category-matrix-view-fact-cell:has(.category-matrix-cell--open) {
+  z-index: 200;
 }
 
 .category-matrix-view-product-header,
@@ -2220,6 +2225,10 @@ button:disabled {
   min-width: 0;
 }
 
+.category-matrix-cell--open {
+  z-index: 1000;
+}
+
 .category-matrix-cell-trigger {
   display: inline-flex;
   align-items: flex-start;
@@ -2245,7 +2254,7 @@ button:disabled {
   position: absolute;
   top: calc(100% + var(--spacing-xs));
   left: 0;
-  z-index: 50;
+  z-index: 1000;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-sm);

@@ -9,6 +9,7 @@ import type {
   CategoryMatrixApiResponse,
   MatrixCriterion,
   MatrixCriterionOption,
+  MatrixDisplayTone,
   MatrixFact,
   MatrixFactValue,
   MatrixGroup,
@@ -26,6 +27,11 @@ const UNVERIFIED_FACT: MatrixFact = {
   status: "unverified",
   value: null,
 };
+
+const FULL_COVERAGE_MULTI_ENUM_CRITERIA = new Set([
+  "supported_platforms",
+  "reactions_threads",
+]);
 
 function effectiveFactKey(fact: MatrixFact): string {
   if (fact.status === "unverified") {
@@ -850,7 +856,13 @@ function MatrixCell({
   const triggerBody = renderTriggerBody(fact, criterion, popoverBody);
 
   return (
-    <span className="category-matrix-cell">
+    <span
+      className={
+        open
+          ? "category-matrix-cell category-matrix-cell--open"
+          : "category-matrix-cell"
+      }
+    >
       <button
         type="button"
         aria-haspopup="dialog"
@@ -998,9 +1010,7 @@ function renderVerifiedValue(
         : String(value);
     case "multi_enum":
       return Array.isArray(value) ? (
-        <span className="category-matrix-option-list">
-          {value.map((optionId) => renderOption(criterion, optionId, t))}
-        </span>
+        renderMultiEnumValue(value, criterion, t)
       ) : (
         String(value)
       );
@@ -1017,6 +1027,45 @@ function renderVerifiedValue(
     default:
       return Array.isArray(value) ? value.join(", ") : String(value);
   }
+}
+
+function renderMultiEnumValue(
+  value: string[],
+  criterion: MatrixCriterion,
+  t: TranslateFn,
+): ReactNode {
+  if (FULL_COVERAGE_MULTI_ENUM_CRITERIA.has(criterion.id)) {
+    return renderFullCoverageOptions(value, criterion, t);
+  }
+
+  return (
+    <span className="category-matrix-option-list">
+      {value.map((optionId) => renderOption(criterion, optionId, t))}
+    </span>
+  );
+}
+
+function renderFullCoverageOptions(
+  value: string[],
+  criterion: MatrixCriterion,
+  t: TranslateFn,
+): ReactNode {
+  const selected = new Set(value);
+  const knownOptionIds = new Set(criterion.options.map((option) => option.id));
+  const unknownSelected = value.filter((optionId) => !knownOptionIds.has(optionId));
+
+  return (
+    <span className="category-matrix-option-list category-matrix-option-list--coverage">
+      {criterion.options.map((option) =>
+        renderOption(criterion, option.id, t, {
+          tone: selected.has(option.id) ? "positive" : "negative",
+        }),
+      )}
+      {unknownSelected.map((optionId) =>
+        renderOption(criterion, optionId, t, { tone: "positive" }),
+      )}
+    </span>
+  );
 }
 
 type MatrixBooleanTone = "positive" | "warning" | "negative" | "neutral";
@@ -1113,10 +1162,11 @@ function renderOption(
   criterion: MatrixCriterion,
   optionId: string,
   t: TranslateFn,
+  overrides: { tone?: MatrixDisplayTone } = {},
 ): ReactNode {
   const option = criterion.options.find((entry) => entry.id === optionId);
   const label = option?.label ?? optionId;
-  const tone = getOptionTone(option);
+  const tone = overrides.tone ?? getOptionTone(option);
   const toneLabel = t(`matrixView.legend.${toneLabelKey(tone)}`);
 
   return (
