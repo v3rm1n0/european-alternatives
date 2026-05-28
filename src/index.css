@@ -1861,6 +1861,29 @@ button:disabled {
   margin: 0;
 }
 
+.category-matrix-view-scroll-frame {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.category-matrix-view-scrollbar-top {
+  max-width: 100%;
+  height: 1rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+}
+
+.category-matrix-view-scrollbar-spacer {
+  min-width: 100%;
+  height: 1px;
+}
+
 .category-matrix-view-scroll {
   max-width: 100%;
   overflow-x: auto;
@@ -2396,9 +2419,14 @@ button:disabled {
 }
 
 @media (max-width: 767px) {
+  .category-matrix-view-scroll-frame {
+    display: none;
+  }
+
   .category-matrix-view-scroll {
     display: none;
   }
+
   .category-matrix-mobile-inspector {
     display: flex;
   }

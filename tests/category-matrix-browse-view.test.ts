@@ -958,6 +958,27 @@ describe("browse matrix view mode", () => {
     expectInOrder(html, ["Portability", "Data retention days"]);
   });
 
+  it("renders a mirrored top horizontal scrollbar above the matrix table", async () => {
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      search: "category=messaging",
+      viewMode: "matrix",
+    });
+
+    const topScrollbarIndex = html.indexOf(
+      "category-matrix-view-scrollbar-top",
+    );
+    const tableScrollIndex = html.indexOf(
+      'class="category-matrix-view-scroll"',
+    );
+    const tableIndex = html.indexOf("category-matrix-view-table");
+
+    expect(topScrollbarIndex).toBeGreaterThan(-1);
+    expect(html).toContain("category-matrix-view-scrollbar-spacer");
+    expect(topScrollbarIndex).toBeLessThan(tableScrollIndex);
+    expect(tableScrollIndex).toBeLessThan(tableIndex);
+  });
+
   it("renders the localized product corner-cell label spanning both header rows in matrix mode", async () => {
     const html = await renderBrowsePage({
       loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),

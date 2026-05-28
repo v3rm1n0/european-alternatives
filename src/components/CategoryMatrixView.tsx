@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { sanitizeHref } from "../utils/sanitizeHref";
 import CategoryMatrixToolbar, {
@@ -63,6 +63,10 @@ export default function CategoryMatrixView({
   const [hideUnverified, setHideUnverified] = useState(false);
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set<string>());
   const [focusedOnly, setFocusedOnly] = useState(false);
+  const topScrollRef = useRef<HTMLDivElement | null>(null);
+  const bottomScrollRef = useRef<HTMLDivElement | null>(null);
+  const tableRef = useRef<HTMLTableElement | null>(null);
+  const [scrollSpacerWidth, setScrollSpacerWidth] = useState(0);
   const { t, i18n } = useTranslation("browse");
   const browseFilteredAlternatives = useMemo(
     () =>
@@ -217,6 +221,60 @@ export default function CategoryMatrixView({
   const togglesActive = showOnlyDifferences || hideUnverified;
   const showEmptyState =
     filteredCriteria.length === 0 && (isQuerying || togglesActive);
+  const updateScrollSpacerWidth = useCallback(() => {
+    const width = tableRef.current?.scrollWidth ?? 0;
+    setScrollSpacerWidth((previous) => (previous === width ? previous : width));
+
+    const topScroller = topScrollRef.current;
+    const bottomScroller = bottomScrollRef.current;
+    if (
+      topScroller !== null &&
+      bottomScroller !== null &&
+      Math.abs(topScroller.scrollLeft - bottomScroller.scrollLeft) > 1
+    ) {
+      topScroller.scrollLeft = bottomScroller.scrollLeft;
+    }
+  }, []);
+  const syncScroll = useCallback((source: "top" | "bottom") => {
+    const sourceElement =
+      source === "top" ? topScrollRef.current : bottomScrollRef.current;
+    const targetElement =
+      source === "top" ? bottomScrollRef.current : topScrollRef.current;
+
+    if (sourceElement === null || targetElement === null) {
+      return;
+    }
+
+    if (Math.abs(targetElement.scrollLeft - sourceElement.scrollLeft) > 1) {
+      targetElement.scrollLeft = sourceElement.scrollLeft;
+    }
+  }, []);
+
+  useEffect(() => {
+    updateScrollSpacerWidth();
+  });
+
+  useEffect(() => {
+    updateScrollSpacerWidth();
+
+    if (typeof ResizeObserver === "undefined" || tableRef.current === null) {
+      return undefined;
+    }
+
+    const observer = new ResizeObserver(updateScrollSpacerWidth);
+    observer.observe(tableRef.current);
+    if (bottomScrollRef.current !== null) {
+      observer.observe(bottomScrollRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [
+    filteredCriteria.length,
+    focusedEmpty,
+    showEmptyState,
+    updateScrollSpacerWidth,
+    visibleAlternatives.length,
+  ]);
 
   return (
     <section
@@ -302,126 +360,153 @@ export default function CategoryMatrixView({
         </div>
       ) : (
         <>
-          <div className="category-matrix-view-scroll" tabIndex={0}>
-            <table className="category-matrix-view-table" aria-label={title}>
-              <thead className="category-matrix-view-head">
-                <tr className="category-matrix-view-group-row">
-                  <th
-                    scope="col"
-                    rowSpan={2}
-                    className="category-matrix-view-product-header category-matrix-view-corner"
-                  >
-                    {t("matrixView.productColumn")}
-                  </th>
-                  {filteredGroups.map((group) => (
+          <div className="category-matrix-view-scroll-frame">
+            <div
+              className="category-matrix-view-scrollbar-top"
+              aria-hidden="true"
+              ref={topScrollRef}
+              onScroll={() => syncScroll("top")}
+            >
+              <div
+                className="category-matrix-view-scrollbar-spacer"
+                style={
+                  scrollSpacerWidth > 0
+                    ? { width: scrollSpacerWidth }
+                    : undefined
+                }
+              />
+            </div>
+            <div
+              className="category-matrix-view-scroll"
+              tabIndex={0}
+              ref={bottomScrollRef}
+              onScroll={() => syncScroll("bottom")}
+            >
+              <table
+                ref={tableRef}
+                className="category-matrix-view-table"
+                aria-label={title}
+              >
+                <thead className="category-matrix-view-head">
+                  <tr className="category-matrix-view-group-row">
                     <th
-                      key={group.id}
-                      scope="colgroup"
-                      colSpan={group.criteria.length}
-                      className="category-matrix-view-group-header"
-                    >
-                      <span className="category-matrix-view-group-label">
-                        {group.label}
-                      </span>
-                      {group.description !== null && (
-                        <span className="category-matrix-view-group-description">
-                          {group.description}
-                        </span>
-                      )}
-                    </th>
-                  ))}
-                </tr>
-                <tr className="category-matrix-view-criterion-row">
-                  {filteredCriteria.map((criterion) => (
-                    <th
-                      key={criterion.id}
                       scope="col"
-                      className="category-matrix-view-criterion-header"
+                      rowSpan={2}
+                      className="category-matrix-view-product-header category-matrix-view-corner"
                     >
-                      <span className="category-matrix-view-criterion-label">
-                        {criterion.label}
-                      </span>
-                      {criterion.helpText !== null && (
-                        <span className="category-matrix-view-criterion-help">
-                          {criterion.helpText}
-                        </span>
-                      )}
+                      {t("matrixView.productColumn")}
                     </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {visibleAlternatives.map((alternative, rowIndex) => {
-                  const isPinned = pinnedIds.has(alternative.id);
-                  const pinLabel = t(
-                    isPinned
-                      ? "matrixView.unpinAction"
-                      : "matrixView.pinAction",
-                    { product: alternative.name },
-                  );
-                  const rowClassName = isPinned
-                    ? "category-matrix-view-row is-pinned"
-                    : "category-matrix-view-row";
-                  return (
-                    <tr key={alternative.id} className={rowClassName}>
+                    {filteredGroups.map((group) => (
                       <th
-                        scope="row"
-                        className="category-matrix-view-alternative-label"
-                        data-morph-id={
-                          reducedMotion
-                            ? undefined
-                            : `alt-name-${alternative.id}`
-                        }
-                        data-pinned={isPinned ? "true" : "false"}
-                        style={cellCustomProps(rowIndex, 0)}
+                        key={group.id}
+                        scope="colgroup"
+                        colSpan={group.criteria.length}
+                        className="category-matrix-view-group-header"
                       >
-                        <span className="category-matrix-view-alternative-name">
-                          {alternative.name}
+                        <span className="category-matrix-view-group-label">
+                          {group.label}
                         </span>
-                        {isPinned && (
-                          <span
-                            className="category-matrix-pin-badge"
-                            aria-hidden="true"
-                          >
-                            {t("matrixView.pinnedBadge")}
+                        {group.description !== null && (
+                          <span className="category-matrix-view-group-description">
+                            {group.description}
                           </span>
                         )}
-                        <button
-                          type="button"
-                          aria-pressed={isPinned ? "true" : "false"}
-                          className={
-                            isPinned
-                              ? "category-matrix-pin-button is-pinned"
-                              : "category-matrix-pin-button"
-                          }
-                          onClick={() => togglePin(alternative.id)}
-                        >
-                          {pinLabel}
-                        </button>
                       </th>
-                      {filteredCriteria.map((criterion, colIndex) => (
-                        <td
-                          key={criterion.id}
-                          className="category-matrix-view-fact-cell"
-                          style={cellCustomProps(rowIndex, colIndex + 1)}
+                    ))}
+                  </tr>
+                  <tr className="category-matrix-view-criterion-row">
+                    {filteredCriteria.map((criterion) => (
+                      <th
+                        key={criterion.id}
+                        scope="col"
+                        className="category-matrix-view-criterion-header"
+                      >
+                        <span className="category-matrix-view-criterion-label">
+                          {criterion.label}
+                        </span>
+                        {criterion.helpText !== null && (
+                          <span className="category-matrix-view-criterion-help">
+                            {criterion.helpText}
+                          </span>
+                        )}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleAlternatives.map((alternative, rowIndex) => {
+                    const isPinned = pinnedIds.has(alternative.id);
+                    const pinLabel = t(
+                      isPinned
+                        ? "matrixView.unpinAction"
+                        : "matrixView.pinAction",
+                      { product: alternative.name },
+                    );
+                    const rowClassName = isPinned
+                      ? "category-matrix-view-row is-pinned"
+                      : "category-matrix-view-row";
+                    return (
+                      <tr key={alternative.id} className={rowClassName}>
+                        <th
+                          scope="row"
+                          className="category-matrix-view-alternative-label"
+                          data-morph-id={
+                            reducedMotion
+                              ? undefined
+                              : `alt-name-${alternative.id}`
+                          }
+                          data-pinned={isPinned ? "true" : "false"}
+                          style={cellCustomProps(rowIndex, 0)}
                         >
-                          <MatrixCell
-                            fact={
-                              alternative.facts[criterion.id] ?? UNVERIFIED_FACT
+                          <span className="category-matrix-view-alternative-name">
+                            {alternative.name}
+                          </span>
+                          {isPinned && (
+                            <span
+                              className="category-matrix-pin-badge"
+                              aria-hidden="true"
+                            >
+                              {t("matrixView.pinnedBadge")}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            aria-pressed={isPinned ? "true" : "false"}
+                            className={
+                              isPinned
+                                ? "category-matrix-pin-button is-pinned"
+                                : "category-matrix-pin-button"
                             }
-                            criterion={criterion}
-                            alternativeId={alternative.id}
-                            alternativeName={alternative.name}
-                            t={t}
-                            language={i18n.language}
-                          />
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                            onClick={() => togglePin(alternative.id)}
+                          >
+                            {pinLabel}
+                          </button>
+                        </th>
+                        {filteredCriteria.map((criterion, colIndex) => (
+                          <td
+                            key={criterion.id}
+                            className="category-matrix-view-fact-cell"
+                            style={cellCustomProps(rowIndex, colIndex + 1)}
+                          >
+                            <MatrixCell
+                              fact={
+                                alternative.facts[criterion.id] ??
+                                UNVERIFIED_FACT
+                              }
+                              criterion={criterion}
+                              alternativeId={alternative.id}
+                              alternativeName={alternative.name}
+                              t={t}
+                              language={i18n.language}
+                            />
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
           <MobileMatrixInspector
             groups={filteredGroups}
