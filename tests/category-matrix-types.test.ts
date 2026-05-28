@@ -258,6 +258,7 @@ expectTypeOf<MatrixCriterionOption>().toEqualTypeOf<{
 expectTypeOf<MatrixAlternative>().toEqualTypeOf<{
   id: string;
   name: string;
+  status?: "alternative" | "us";
   website: string | null;
   logo: string | null;
   country: CountryCode | null;

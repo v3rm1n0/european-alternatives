@@ -20,6 +20,7 @@ type TranslateFn = ReturnType<typeof useTranslation<"browse">>["t"];
 interface CategoryMatrixViewProps {
   matrix: CategoryMatrixApiResponse;
   visibleAlternativeIds?: ReadonlySet<string>;
+  onAlternativeOpen?: (alternativeId: string) => void;
   reducedMotion?: boolean;
 }
 
@@ -32,6 +33,14 @@ const FULL_COVERAGE_MULTI_ENUM_CRITERIA = new Set([
   "supported_platforms",
   "reactions_threads",
 ]);
+
+type MatrixSortKey = "name" | "trust_score";
+type MatrixSortDirection = "asc" | "desc";
+
+interface MatrixSortState {
+  key: MatrixSortKey | null;
+  direction: MatrixSortDirection;
+}
 
 function effectiveFactKey(fact: MatrixFact): string {
   if (fact.status === "unverified") {
@@ -58,9 +67,90 @@ function cellCustomProps(rowIndex: number, colIndex: number): CSSProperties {
   };
 }
 
+function sortMatrixAlternatives(
+  alternatives: CategoryMatrixApiResponse["data"]["alternatives"],
+  sortState: MatrixSortState,
+): CategoryMatrixApiResponse["data"]["alternatives"] {
+  if (sortState.key === null) {
+    return alternatives;
+  }
+
+  return [...alternatives].sort((left, right) =>
+    compareMatrixAlternatives(left, right, sortState),
+  );
+}
+
+function compareMatrixAlternatives(
+  left: CategoryMatrixApiResponse["data"]["alternatives"][number],
+  right: CategoryMatrixApiResponse["data"]["alternatives"][number],
+  sortState: MatrixSortState,
+): number {
+  const directionMultiplier = sortState.direction === "asc" ? 1 : -1;
+
+  if (sortState.key === "trust_score") {
+    const leftScore = matrixTrustScore(left);
+    const rightScore = matrixTrustScore(right);
+    if (leftScore !== rightScore) {
+      return (leftScore - rightScore) * directionMultiplier;
+    }
+  }
+
+  const nameComparison = left.name.localeCompare(right.name);
+  if (nameComparison !== 0) {
+    return sortState.key === "name"
+      ? nameComparison * directionMultiplier
+      : nameComparison;
+  }
+
+  const idComparison = left.id.localeCompare(right.id);
+  return sortState.key === "name"
+    ? idComparison * directionMultiplier
+    : idComparison;
+}
+
+function matrixTrustScore(
+  alternative: CategoryMatrixApiResponse["data"]["alternatives"][number],
+): number {
+  const fact = alternative.facts.trust_score;
+  return fact?.status === "verified" && typeof fact.value === "number"
+    ? fact.value
+    : Number.NEGATIVE_INFINITY;
+}
+
+function sortAriaValue(
+  sortState: MatrixSortState,
+  key: MatrixSortKey,
+): "ascending" | "descending" | "none" {
+  if (sortState.key === null || sortState.key !== key) {
+    return "none";
+  }
+
+  return sortState.direction === "asc" ? "ascending" : "descending";
+}
+
+function matrixSortLabel(
+  t: TranslateFn,
+  key: MatrixSortKey,
+  sortState: MatrixSortState,
+): string {
+  const nextDirection =
+    sortState.key === null || sortState.key !== key
+      ? key === "trust_score"
+        ? "desc"
+        : "asc"
+      : sortState.direction === "asc"
+        ? "desc"
+        : "asc";
+  const keyName = key === "name" ? "name" : "trustScore";
+  const directionName = nextDirection === "asc" ? "Asc" : "Desc";
+
+  return t(`matrixView.sort.${keyName}${directionName}`);
+}
+
 export default function CategoryMatrixView({
   matrix,
   visibleAlternativeIds,
+  onAlternativeOpen,
   reducedMotion = false,
 }: CategoryMatrixViewProps) {
   const [query, setQuery] = useState("");
@@ -69,6 +159,10 @@ export default function CategoryMatrixView({
   const [hideUnverified, setHideUnverified] = useState(false);
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set<string>());
   const [focusedOnly, setFocusedOnly] = useState(false);
+  const [sortState, setSortState] = useState<MatrixSortState>({
+    key: null,
+    direction: "asc",
+  });
   const topScrollRef = useRef<HTMLDivElement | null>(null);
   const bottomScrollRef = useRef<HTMLDivElement | null>(null);
   const tableRef = useRef<HTMLTableElement | null>(null);
@@ -83,23 +177,27 @@ export default function CategoryMatrixView({
           ),
     [matrix.data.alternatives, visibleAlternativeIds],
   );
+  const sortedBrowseFilteredAlternatives = useMemo(
+    () => sortMatrixAlternatives(browseFilteredAlternatives, sortState),
+    [browseFilteredAlternatives, sortState],
+  );
   const pinnedAlternatives = useMemo(
     () =>
-      browseFilteredAlternatives.filter((alternative) =>
+      sortedBrowseFilteredAlternatives.filter((alternative) =>
         pinnedIds.has(alternative.id),
       ),
-    [browseFilteredAlternatives, pinnedIds],
+    [sortedBrowseFilteredAlternatives, pinnedIds],
   );
   const orderedAlternatives = useMemo(() => {
     if (pinnedAlternatives.length === 0) {
-      return browseFilteredAlternatives;
+      return sortedBrowseFilteredAlternatives;
     }
     const pinnedSet = new Set(pinnedAlternatives.map((alt) => alt.id));
-    const unpinned = browseFilteredAlternatives.filter(
+    const unpinned = sortedBrowseFilteredAlternatives.filter(
       (alternative) => !pinnedSet.has(alternative.id),
     );
     return [...pinnedAlternatives, ...unpinned];
-  }, [browseFilteredAlternatives, pinnedAlternatives]);
+  }, [sortedBrowseFilteredAlternatives, pinnedAlternatives]);
   const focusMode = focusedOnly && pinnedAlternatives.length > 0;
   const visibleAlternatives = focusMode
     ? pinnedAlternatives
@@ -129,6 +227,19 @@ export default function CategoryMatrixView({
   const clearPins = () => {
     setPinnedIds(new Set<string>());
     setFocusedOnly(false);
+  };
+  const toggleSort = (key: MatrixSortKey) => {
+    setSortState((previous) =>
+      previous.key === key
+        ? {
+            key,
+            direction: previous.direction === "asc" ? "desc" : "asc",
+          }
+        : {
+            key,
+            direction: key === "trust_score" ? "desc" : "asc",
+          },
+    );
   };
   const exitFocus = () => {
     setFocusedOnly(false);
@@ -399,8 +510,17 @@ export default function CategoryMatrixView({
                       scope="col"
                       rowSpan={2}
                       className="category-matrix-view-product-header category-matrix-view-corner"
+                      aria-sort={sortAriaValue(sortState, "name")}
                     >
-                      {t("matrixView.productColumn")}
+                      <button
+                        type="button"
+                        className="category-matrix-sort-button"
+                        onClick={() => toggleSort("name")}
+                        aria-label={matrixSortLabel(t, "name", sortState)}
+                      >
+                        <span>{t("matrixView.productColumn")}</span>
+                        {renderSortIcon(sortState, "name")}
+                      </button>
                     </th>
                     {filteredGroups.map((group) => (
                       <th
@@ -426,10 +546,31 @@ export default function CategoryMatrixView({
                         key={criterion.id}
                         scope="col"
                         className="category-matrix-view-criterion-header"
+                        aria-sort={
+                          criterion.id === "trust_score"
+                            ? sortAriaValue(sortState, "trust_score")
+                            : undefined
+                        }
                       >
-                        <span className="category-matrix-view-criterion-label">
-                          {criterion.label}
-                        </span>
+                        {criterion.id === "trust_score" ? (
+                          <button
+                            type="button"
+                            className="category-matrix-sort-button"
+                            onClick={() => toggleSort("trust_score")}
+                            aria-label={matrixSortLabel(
+                              t,
+                              "trust_score",
+                              sortState,
+                            )}
+                          >
+                            <span>{criterion.label}</span>
+                            {renderSortIcon(sortState, "trust_score")}
+                          </button>
+                        ) : (
+                          <span className="category-matrix-view-criterion-label">
+                            {criterion.label}
+                          </span>
+                        )}
                         {criterion.helpText !== null && (
                           <span className="category-matrix-view-criterion-help">
                             {criterion.helpText}
@@ -464,9 +605,22 @@ export default function CategoryMatrixView({
                           data-pinned={isPinned ? "true" : "false"}
                           style={cellCustomProps(rowIndex, 0)}
                         >
-                          <span className="category-matrix-view-alternative-name">
-                            {alternative.name}
-                          </span>
+                          {onAlternativeOpen === undefined ? (
+                            <span className="category-matrix-view-alternative-name">
+                              {alternative.name}
+                            </span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="category-matrix-view-alternative-open"
+                              onClick={() => onAlternativeOpen(alternative.id)}
+                              aria-label={t("matrixView.openProductDetails", {
+                                product: alternative.name,
+                              })}
+                            >
+                              {alternative.name}
+                            </button>
+                          )}
                           <button
                             type="button"
                             aria-pressed={isPinned ? "true" : "false"}
@@ -511,6 +665,7 @@ export default function CategoryMatrixView({
             groups={filteredGroups}
             alternatives={orderedAlternatives}
             pinnedAlternatives={pinnedAlternatives}
+            onAlternativeOpen={onAlternativeOpen}
             t={t}
             language={i18n.language}
           />
@@ -537,10 +692,37 @@ function renderPinIcon(isPinned: boolean): ReactNode {
   );
 }
 
+function renderSortIcon(
+  sortState: MatrixSortState,
+  key: MatrixSortKey,
+): ReactNode {
+  const active = sortState.key === key;
+  const direction = active ? sortState.direction : "none";
+
+  return (
+    <svg
+      className="category-matrix-sort-button-icon"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+      data-direction={direction}
+    >
+      {direction === "asc" ? (
+        <path d="M7 14l5-5 5 5H7z" />
+      ) : direction === "desc" ? (
+        <path d="M7 10l5 5 5-5H7z" />
+      ) : (
+        <path d="M7 8l5-5 5 5H7zm10 8l-5 5-5-5h10z" />
+      )}
+    </svg>
+  );
+}
+
 interface MobileMatrixInspectorProps {
   groups: CategoryMatrixApiResponse["data"]["groups"];
   alternatives: CategoryMatrixApiResponse["data"]["alternatives"];
   pinnedAlternatives?: CategoryMatrixApiResponse["data"]["alternatives"];
+  onAlternativeOpen?: (alternativeId: string) => void;
   t: TranslateFn;
   language: string;
 }
@@ -568,6 +750,7 @@ function MobileMatrixInspector({
   groups,
   alternatives,
   pinnedAlternatives,
+  onAlternativeOpen,
   t,
   language,
 }: MobileMatrixInspectorProps) {
@@ -669,9 +852,22 @@ function MobileMatrixInspector({
                     className="category-matrix-mobile-inspector-cell"
                     data-alternative-id={alternative.id}
                   >
-                    <span className="category-matrix-mobile-inspector-alternative-label">
-                      {alternative.name}
-                    </span>
+                    {onAlternativeOpen === undefined ? (
+                      <span className="category-matrix-mobile-inspector-alternative-label">
+                        {alternative.name}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="category-matrix-mobile-inspector-alternative-open"
+                        onClick={() => onAlternativeOpen(alternative.id)}
+                        aria-label={t("matrixView.openProductDetails", {
+                          product: alternative.name,
+                        })}
+                      >
+                        {alternative.name}
+                      </button>
+                    )}
                     <MatrixCell
                       fact={alternative.facts[criterion.id] ?? UNVERIFIED_FACT}
                       criterion={criterion}

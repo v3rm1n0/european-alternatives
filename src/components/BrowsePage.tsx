@@ -13,6 +13,7 @@ import { getLocalizedAlternativeDescription } from "../utils/alternativeText";
 import { getAlternativeCategories } from "../utils/alternativeCategories";
 import { getEffectiveTrustScore } from "../utils/trustScore";
 import type {
+  Alternative,
   CardViewMode,
   CategoryId,
   CategoryMatrixLoadResult,
@@ -368,9 +369,30 @@ export default function BrowsePage() {
     sortBy,
     i18n.language,
   ]);
+  const catalogAlternativeById = useMemo(() => {
+    const lookup = new Map<string, Alternative>();
+    for (const alternative of alternatives) {
+      lookup.set(alternative.id, alternative);
+    }
+    for (const vendor of usVendors) {
+      lookup.set(vendor.id, vendor);
+    }
+    return lookup;
+  }, [alternatives, usVendors]);
   const visibleMatrixAlternativeIds = useMemo(
-    () => new Set(filteredAlternatives.map((alternative) => alternative.id)),
-    [filteredAlternatives],
+    () => {
+      const ids = new Set(filteredAlternatives.map((alternative) => alternative.id));
+      for (const matrixAlternative of readyCategoryMatrix?.data.alternatives ?? []) {
+        if (
+          matrixAlternative.status === "us" ||
+          matrixAlternative.country === "us"
+        ) {
+          ids.add(matrixAlternative.id);
+        }
+      }
+      return ids;
+    },
+    [filteredAlternatives, readyCategoryMatrix],
   );
   const effectiveResultMode: ResultMode =
     requestedResultMode === "matrix" && matrixViewAvailable ? "matrix" : "browse";
@@ -378,8 +400,11 @@ export default function BrowsePage() {
   const showMatrixView = effectiveResultMode === "matrix";
 
   const expandedAlternatives = useMemo(
-    () => filteredAlternatives.filter((alt) => expandedCardIds.has(alt.id)),
-    [filteredAlternatives, expandedCardIds],
+    () =>
+      Array.from(expandedCardIds)
+        .map((id) => catalogAlternativeById.get(id))
+        .filter((alternative): alternative is Alternative => alternative !== undefined),
+    [catalogAlternativeById, expandedCardIds],
   );
 
   const reducedMotion = useReducedMotion() ?? false;
@@ -532,6 +557,7 @@ export default function BrowsePage() {
                     <CategoryMatrixView
                       matrix={readyCategoryMatrix}
                       visibleAlternativeIds={visibleMatrixAlternativeIds}
+                      onAlternativeOpen={handleExpand}
                       reducedMotion={reducedMotion}
                     />
                   </motion.div>

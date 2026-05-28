@@ -29,6 +29,7 @@ type MatrixScenario = {
   options: Array<Record<string, unknown>>;
   alternatives: Array<Record<string, unknown>>;
   categoryUsVendors: Array<Record<string, unknown>>;
+  replacements: Array<Record<string, unknown>>;
   tags: Array<Record<string, unknown>>;
   reservations: Array<Record<string, unknown>>;
   positiveSignals: Array<Record<string, unknown>>;
@@ -58,6 +59,7 @@ type MatrixFact = {
 
 type MatrixAlternative = {
   id: string;
+  status?: string;
   country: string | null;
   category: string | null;
   secondaryCategories?: string[];
@@ -307,12 +309,33 @@ const matrixScenario: MatrixScenario = {
       self_hostable: 0,
       memberships: [],
     },
+    {
+      id: 507,
+      slug: "signal",
+      name: "Signal",
+      status: "us",
+      is_active: 1,
+      country_code: "us",
+      website_url: "https://signal.example",
+      logo_path: "/logos/signal.svg",
+      open_source_level: "full",
+      self_hostable: 0,
+      memberships: [],
+    },
   ],
   categoryUsVendors: [
     {
       category_id: "messaging",
       entry_id: 506,
       raw_name: "US Chat",
+      sort_order: 1,
+    },
+  ],
+  replacements: [
+    {
+      entry_id: 501,
+      replaced_entry_id: 507,
+      raw_name: "Signal",
       sort_order: 1,
     },
   ],
@@ -334,6 +357,11 @@ const matrixScenario: MatrixScenario = {
     {
       entry_id: 506,
       base_class_override: "us",
+      is_ad_surveillance: 0,
+    },
+    {
+      entry_id: 507,
+      base_class_override: "foss",
       is_ad_surveillance: 0,
     },
   ],
@@ -573,6 +601,41 @@ function matrix_catalog_test_entry_is_category_us_vendor(array $scenario, array 
     return false;
 }
 
+function matrix_catalog_test_find_entry(array $scenario, int $entryId): ?array
+{
+    foreach ($scenario['alternatives'] as $candidate) {
+        if ((int)($candidate['id'] ?? 0) === $entryId) {
+            return $candidate;
+        }
+    }
+
+    return null;
+}
+
+function matrix_catalog_test_entry_is_replaced_by_category_alternative(array $scenario, array $entry, string $categoryId): bool
+{
+    foreach ($scenario['replacements'] ?? [] as $replacement) {
+        if ((int)($replacement['replaced_entry_id'] ?? 0) !== (int)($entry['id'] ?? 0)) {
+            continue;
+        }
+
+        $alternative = matrix_catalog_test_find_entry($scenario, (int)($replacement['entry_id'] ?? 0));
+        if ($alternative === null) {
+            continue;
+        }
+
+        if (($alternative['status'] ?? null) !== 'alternative' || (int)($alternative['is_active'] ?? 0) !== 1) {
+            continue;
+        }
+
+        if (matrix_catalog_test_entry_belongs_to_category($alternative, $categoryId)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function matrix_catalog_test_entry_primary_matches_category(array $entry, string $categoryId): bool
 {
     foreach ($entry['memberships'] ?? [] as $membership) {
@@ -624,7 +687,8 @@ function matrix_catalog_test_selected_entry_ids(array $scenario, string $sql, st
     $normalized = strtolower(preg_replace('/\\s+/', ' ', $sql) ?? $sql);
     $usesCategoryMembership = str_contains($normalized, 'entry_categories');
     $usesCategoryUsVendors = str_contains($normalized, 'category_us_vendors');
-    $filtersAlternativeStatus = str_contains($normalized, "status = 'alternative'");
+    $usesEntryReplacements = str_contains($normalized, 'entry_replacements');
+    $filtersAlternativeStatus = preg_match("/\\bce\\.status\\s*=\\s*'alternative'/", $normalized) === 1;
     $filtersAlternativeOrUsStatus = preg_match("/status\\s+in\\s*\\(\\s*'alternative'\\s*,\\s*'us'\\s*\\)/", $normalized) === 1;
     $filtersActive = preg_match('/\\bis_active\\b\\s*=\\s*(?:1|true)/', $normalized) === 1;
     $filtersPrimaryMembership = preg_match('/\\bis_primary\\b\\s*=\\s*(?:1|true)/', $normalized) === 1;
@@ -652,14 +716,18 @@ function matrix_catalog_test_selected_entry_ids(array $scenario, string $sql, st
         $isCategoryUsVendor = $usesCategoryUsVendors
             && ($entry['status'] ?? null) === 'us'
             && matrix_catalog_test_entry_is_category_us_vendor($scenario, $entry, $categoryId);
+        $isReplacementUsVendor = $usesEntryReplacements
+            && ($entry['status'] ?? null) === 'us'
+            && matrix_catalog_test_entry_is_replaced_by_category_alternative($scenario, $entry, $categoryId);
 
-        if (!$belongsToCategory && !$isCategoryUsVendor) {
+        if (!$belongsToCategory && !$isCategoryUsVendor && !$isReplacementUsVendor) {
             continue;
         }
 
         if (
             $filtersPrimaryMembership
             && !$isCategoryUsVendor
+            && !$isReplacementUsVendor
             && !matrix_catalog_test_entry_primary_matches_category($entry, $categoryId)
         ) {
             continue;
@@ -1061,7 +1129,7 @@ describe("catalog matrix API endpoint", () => {
       locale: "en",
       groupCount: 3,
       criterionCount: 3,
-      alternativeCount: 3,
+      alternativeCount: 4,
     });
     expect(payload.data.groups.map((group) => group.id)).toEqual([
       "trust",
@@ -1081,6 +1149,7 @@ describe("catalog matrix API endpoint", () => {
     expect(payload.data.alternatives.map((entry) => entry.id).sort()).toEqual([
       "primary-chat",
       "secondary-chat",
+      "signal",
       "us-chat",
     ]);
     expect(payload.data.alternatives.map((entry) => entry.id)).not.toContain(
@@ -1094,6 +1163,13 @@ describe("catalog matrix API endpoint", () => {
       secondaryCategories: ["messaging"],
     });
     expect(findAlternative(payload, "us-chat")).toMatchObject({
+      status: "us",
+      country: "us",
+      category: null,
+      secondaryCategories: [],
+    });
+    expect(findAlternative(payload, "signal")).toMatchObject({
+      status: "us",
       country: "us",
       category: null,
       secondaryCategories: [],
@@ -1107,6 +1183,7 @@ describe("catalog matrix API endpoint", () => {
     const primary = findAlternative(payload, "primary-chat");
     const secondary = findAlternative(payload, "secondary-chat");
     const usVendor = findAlternative(payload, "us-chat");
+    const replacementVendor = findAlternative(payload, "signal");
 
     expect(payload.data.groups[0]).toMatchObject({
       id: "trust",
@@ -1133,6 +1210,10 @@ describe("catalog matrix API endpoint", () => {
       status: "verified",
     });
     expect(typeof usVendor.facts.trust_score.value).toBe("number");
+    expect(replacementVendor.facts.trust_score).toMatchObject({
+      status: "verified",
+    });
+    expect(typeof replacementVendor.facts.trust_score.value).toBe("number");
   });
 
   it("serves repeated matrix requests from cache without requiring database access", async () => {

@@ -264,6 +264,9 @@ function isMatrixAlternative(value: unknown): value is MatrixAlternative {
     isRecord(value) &&
     typeof value.id === "string" &&
     typeof value.name === "string" &&
+    (value.status === undefined ||
+      value.status === "alternative" ||
+      value.status === "us") &&
     isNullableString(value.website) &&
     isNullableString(value.logo) &&
     isNullableString(value.country) &&

@@ -136,7 +136,9 @@ export default function AlternativeCard({
 }: AlternativeCardProps) {
   const { categories } = useCatalog();
   const [usVendorDetailsExpanded, setUsVendorDetailsExpanded] = useState(false);
-  const [trustBreakdownExpanded, setTrustBreakdownExpanded] = useState(false);
+  const [trustBreakdownExpanded, setTrustBreakdownExpanded] = useState(
+    () => overlayMode === true,
+  );
   const [expandedUsVendorBreakdowns, setExpandedUsVendorBreakdowns] = useState<
     Set<string>
   >(new Set());

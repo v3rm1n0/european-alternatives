@@ -94,6 +94,13 @@
       "clearPins": "Anheftungen löschen",
       "pinnedCount": "{{count}} angeheftet"
     },
+    "sort": {
+      "nameAsc": "Nach Name aufsteigend sortieren",
+      "nameDesc": "Nach Name absteigend sortieren",
+      "trustScoreAsc": "Nach Trust-Score aufsteigend sortieren",
+      "trustScoreDesc": "Nach Trust-Score absteigend sortieren"
+    },
+    "openProductDetails": "Details zu {{product}} öffnen",
     "pinAction": "{{product}} anheften",
     "unpinAction": "{{product}} lösen",
     "pinnedBadge": "Angeheftet",

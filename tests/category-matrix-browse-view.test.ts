@@ -97,6 +97,11 @@ vi.mock("react-i18next", () => {
     "matrixView.accessedDate": "Accessed {{date}}",
     "matrixView.openSourceLabel":
       "Open source for {{product}} — {{criterion}}",
+    "matrixView.sort.nameAsc": "Sort by name ascending",
+    "matrixView.sort.nameDesc": "Sort by name descending",
+    "matrixView.sort.trustScoreAsc": "Sort by Trust Score ascending",
+    "matrixView.sort.trustScoreDesc": "Sort by Trust Score descending",
+    "matrixView.openProductDetails": "Open {{product}} details",
     "compare.selectedCount": "{{count}} card selected for comparison",
     "compare.open": "Compare",
     "compare.clear": "Clear comparison selection",
@@ -301,6 +306,7 @@ function matrixAlternative(
   id: string,
   name: string,
   facts: Record<string, MatrixFact>,
+  overrides: Partial<MatrixAlternative> = {},
 ): MatrixAlternative {
   return {
     id,
@@ -311,6 +317,7 @@ function matrixAlternative(
     category: "messaging",
     secondaryCategories: [],
     facts,
+    ...overrides,
   };
 }
 
@@ -684,7 +691,7 @@ function createBrowseCatalog() {
     furtherReadingResources: [],
     landingCategoryGroups: [],
     loading: false,
-    usVendors: [],
+    usVendors: [browseAlternative("whatsapp", "WhatsApp", "messaging")],
   };
 }
 
@@ -783,7 +790,8 @@ describe("browse matrix view mode", () => {
       "Data export formats",
       "Support SLA",
     ]);
-    // Alternative names appear as row-label headers (scope="row") in the matrix order.
+    // Alternative names appear as row-label headers (scope="row") in the
+    // matrix order until the user changes the table sort.
     expect(html).toMatch(
       /<th[^>]*scope="row"[^>]*>[\s\S]*?Zeta Chat[\s\S]*?<\/th>/u,
     );
@@ -1003,6 +1011,59 @@ describe("browse matrix view mode", () => {
     expectInOrder(html, ["Trust Score", "End-to-end encryption"]);
     expect(html).toMatch(/category-matrix-fact--positive[\s\S]{0,500}?8\.6\/10/u);
     expect(html).toMatch(/category-matrix-fact--negative[\s\S]{0,500}?3\.6\/10/u);
+  });
+
+  it("renders table sort controls and clickable matrix product names", async () => {
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix(
+        "messaging",
+        {
+          status: "ready",
+          matrix: matrix(
+            [
+              {
+                id: "trust",
+                label: "Trust",
+                description: null,
+                criteria: [
+                  criterion("trust_score", "none", {
+                    label: "Trust Score",
+                    valueType: "number",
+                  }),
+                ],
+              },
+              {
+                id: "privacy",
+                label: "Privacy",
+                description: null,
+                criteria: [
+                  criterion("e2ee", "must_match", {
+                    label: "End-to-end encryption",
+                    valueType: "boolean",
+                    semantics: "beneficial",
+                  }),
+                ],
+              },
+            ],
+            [
+              matrixAlternative("alpha-chat", "Alpha Chat", {
+                trust_score: { status: "verified", value: 8.6 },
+                e2ee: { status: "verified", value: true },
+              }),
+            ],
+          ),
+          error: null,
+        },
+      ),
+      search: "category=messaging",
+      viewMode: "matrix",
+    });
+
+    expect(html).toContain('aria-label="Sort by name ascending"');
+    expect(html).toContain('aria-label="Sort by Trust Score descending"');
+    expect(html).toMatch(
+      /<button[^>]*class="category-matrix-view-alternative-open"[^>]*>[\s\S]*?Alpha Chat[\s\S]*?<\/button>/u,
+    );
   });
 
   it("renders risk booleans from the user's perspective so false is positive and true is negative", async () => {
@@ -1233,21 +1294,51 @@ describe("browse matrix view mode", () => {
 
   it("limits matrix rows to the alternatives visible after browse filters", async () => {
     const html = await renderBrowsePage({
-      loadedCategoryMatrix: loadedMatrix("messaging", readyMatrixResult()),
+      loadedCategoryMatrix: loadedMatrix(
+        "messaging",
+        {
+          status: "ready",
+          matrix: matrix(
+            readyMatrixResult().matrix?.data.groups ?? [],
+            [
+              ...(readyMatrixResult().matrix?.data.alternatives ?? []),
+              matrixAlternative(
+                "whatsapp",
+                "WhatsApp",
+                {
+                  trust_score: { status: "verified", value: 3.6 },
+                  e2ee: { status: "unverified", value: null },
+                },
+                {
+                  status: "us",
+                  country: "us",
+                  category: null,
+                },
+              ),
+            ],
+          ),
+          error: null,
+        },
+      ),
       search: "category=messaging&q=alpha",
       viewMode: "matrix",
     });
 
     expect(html).toContain("<table");
-    // Filtered-out alternative does not appear as a row-label header.
+    // Filtered-out normal alternatives are hidden, but US benchmark rows stay
+    // visible so the matrix can compare against the products being replaced.
     expect(html).not.toMatch(
       /<th[^>]*scope="row"[^>]*>[\s\S]*?Zeta Chat[\s\S]*?<\/th>/u,
     );
     expect(html).toMatch(
       /<th[^>]*scope="row"[^>]*>[\s\S]*?Alpha Chat[\s\S]*?<\/th>/u,
     );
+    expect(html).toMatch(
+      /<th[^>]*scope="row"[^>]*>[\s\S]*?WhatsApp[\s\S]*?<\/th>/u,
+    );
     expect(html).not.toContain("Zeta Chat");
     expect(html).toContain("Alpha Chat");
+    expect(html).toContain("WhatsApp");
     expect(html).toContain("EU hosted");
     expect(html).not.toContain("https://zeta-chat.example/privacy");
     expect(html).not.toContain("1,234");

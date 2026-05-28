@@ -94,6 +94,13 @@
       "clearPins": "Clear pins",
       "pinnedCount": "{{count}} pinned"
     },
+    "sort": {
+      "nameAsc": "Sort by name ascending",
+      "nameDesc": "Sort by name descending",
+      "trustScoreAsc": "Sort by Trust Score ascending",
+      "trustScoreDesc": "Sort by Trust Score descending"
+    },
+    "openProductDetails": "Open {{product}} details",
     "pinAction": "Pin {{product}}",
     "unpinAction": "Unpin {{product}}",
     "pinnedBadge": "Pinned",

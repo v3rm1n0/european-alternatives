@@ -1999,6 +1999,44 @@ button:disabled {
   line-height: 1.4;
 }
 
+.category-matrix-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.category-matrix-sort-button:hover {
+  color: var(--accent-primary);
+}
+
+.category-matrix-sort-button:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+.category-matrix-sort-button-icon {
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.category-matrix-sort-button:hover .category-matrix-sort-button-icon,
+.category-matrix-sort-button-icon[data-direction="asc"],
+.category-matrix-sort-button-icon[data-direction="desc"] {
+  color: currentColor;
+}
+
 .category-matrix-view-fact-cell {
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
@@ -2363,6 +2401,31 @@ button:disabled {
   letter-spacing: 0.04em;
 }
 
+.category-matrix-mobile-inspector-alternative-open {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.category-matrix-mobile-inspector-alternative-open:hover {
+  color: var(--accent-primary);
+}
+
+.category-matrix-mobile-inspector-alternative-open:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
 @media (max-width: 767px) {
   .category-matrix-view-scroll-frame {
     display: none;
@@ -2700,6 +2763,28 @@ button:disabled {
   color: var(--text-secondary);
   cursor: pointer;
   vertical-align: middle;
+}
+
+.category-matrix-view-alternative-open {
+  max-width: calc(100% - 2.25rem);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.category-matrix-view-alternative-open:hover {
+  color: var(--accent-primary);
+}
+
+.category-matrix-view-alternative-open:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .category-matrix-pin-icon {
