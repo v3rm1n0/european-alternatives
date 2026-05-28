@@ -14,6 +14,7 @@ import { afterAll, describe, expect, it } from "vitest";
 const matrixEndpointPath = resolve("api/catalog/matrix.php");
 const cachePath = resolve("api/cache.php");
 const helpersPath = resolve("api/catalog/helpers.php");
+const scoringPath = resolve("api/catalog/scoring.php");
 const localTempRoot = resolve("logs/issues/410");
 const tempPaths: string[] = [];
 
@@ -27,6 +28,11 @@ type MatrixScenario = {
   criteria: Array<Record<string, unknown>>;
   options: Array<Record<string, unknown>>;
   alternatives: Array<Record<string, unknown>>;
+  categoryUsVendors: Array<Record<string, unknown>>;
+  tags: Array<Record<string, unknown>>;
+  reservations: Array<Record<string, unknown>>;
+  positiveSignals: Array<Record<string, unknown>>;
+  scoringMetadata: Array<Record<string, unknown>>;
   facts: Array<Record<string, unknown>>;
   auditRows: Array<Record<string, unknown>>;
   failOnDb?: boolean;
@@ -52,6 +58,7 @@ type MatrixFact = {
 
 type MatrixAlternative = {
   id: string;
+  country: string | null;
   category: string | null;
   secondaryCategories?: string[];
   facts: Record<string, MatrixFact>;
@@ -195,6 +202,8 @@ const matrixScenario: MatrixScenario = {
       country_code: "de",
       website_url: "https://primary-chat.example",
       logo_path: "/logos/primary-chat.svg",
+      open_source_level: "full",
+      self_hostable: 1,
       memberships: [
         {
           entry_id: 501,
@@ -213,6 +222,8 @@ const matrixScenario: MatrixScenario = {
       country_code: "fr",
       website_url: "https://secondary-chat.example",
       logo_path: "/logos/secondary-chat.svg",
+      open_source_level: "partial",
+      self_hostable: 0,
       memberships: [
         {
           entry_id: 502,
@@ -237,6 +248,8 @@ const matrixScenario: MatrixScenario = {
       country_code: "nl",
       website_url: "https://email-only.example",
       logo_path: "/logos/email-only.svg",
+      open_source_level: "none",
+      self_hostable: 0,
       memberships: [
         { entry_id: 503, category_id: "email", is_primary: 1, sort_order: 1 },
       ],
@@ -250,6 +263,8 @@ const matrixScenario: MatrixScenario = {
       country_code: "es",
       website_url: "https://inactive-chat.example",
       logo_path: "/logos/inactive-chat.svg",
+      open_source_level: "none",
+      self_hostable: 0,
       memberships: [
         {
           entry_id: 504,
@@ -268,6 +283,8 @@ const matrixScenario: MatrixScenario = {
       country_code: "it",
       website_url: "https://draft-chat.example",
       logo_path: "/logos/draft-chat.svg",
+      open_source_level: "none",
+      self_hostable: 0,
       memberships: [
         {
           entry_id: 505,
@@ -276,6 +293,48 @@ const matrixScenario: MatrixScenario = {
           sort_order: 1,
         },
       ],
+    },
+    {
+      id: 506,
+      slug: "us-chat",
+      name: "US Chat",
+      status: "us",
+      is_active: 1,
+      country_code: "us",
+      website_url: "https://us-chat.example",
+      logo_path: "/logos/us-chat.svg",
+      open_source_level: "none",
+      self_hostable: 0,
+      memberships: [],
+    },
+  ],
+  categoryUsVendors: [
+    {
+      category_id: "messaging",
+      entry_id: 506,
+      raw_name: "US Chat",
+      sort_order: 1,
+    },
+  ],
+  tags: [
+    {
+      entry_id: 501,
+      slug: "privacy",
+      sort_order: 1,
+    },
+  ],
+  reservations: [],
+  positiveSignals: [],
+  scoringMetadata: [
+    {
+      entry_id: 501,
+      base_class_override: "foss",
+      is_ad_surveillance: 0,
+    },
+    {
+      entry_id: 506,
+      base_class_override: "us",
+      is_ad_surveillance: 0,
     },
   ],
   facts: [
@@ -390,6 +449,7 @@ define('EUROALT_CACHE_DIR', ${JSON.stringify(`${cacheDir}/`)});
 define('EUROALT_CACHE_TTL', 300);
 require ${JSON.stringify(cachePath)};
 require ${JSON.stringify(helpersPath)};
+require ${JSON.stringify(scoringPath)};
 
 $_SERVER['REQUEST_METHOD'] = 'GET';
 $_GET = json_decode(${JSON.stringify(JSON.stringify(query))}, true, 512, JSON_THROW_ON_ERROR);
@@ -499,6 +559,20 @@ function matrix_catalog_test_entry_belongs_to_category(array $entry, string $cat
     return false;
 }
 
+function matrix_catalog_test_entry_is_category_us_vendor(array $scenario, array $entry, string $categoryId): bool
+{
+    foreach ($scenario['categoryUsVendors'] ?? [] as $vendor) {
+        if (
+            ($vendor['category_id'] ?? null) === $categoryId
+            && (int)($vendor['entry_id'] ?? 0) === (int)($entry['id'] ?? 0)
+        ) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function matrix_catalog_test_entry_primary_matches_category(array $entry, string $categoryId): bool
 {
     foreach ($entry['memberships'] ?? [] as $membership) {
@@ -549,7 +623,9 @@ function matrix_catalog_test_selected_entry_ids(array $scenario, string $sql, st
 {
     $normalized = strtolower(preg_replace('/\\s+/', ' ', $sql) ?? $sql);
     $usesCategoryMembership = str_contains($normalized, 'entry_categories');
+    $usesCategoryUsVendors = str_contains($normalized, 'category_us_vendors');
     $filtersAlternativeStatus = str_contains($normalized, "status = 'alternative'");
+    $filtersAlternativeOrUsStatus = preg_match("/status\\s+in\\s*\\(\\s*'alternative'\\s*,\\s*'us'\\s*\\)/", $normalized) === 1;
     $filtersActive = preg_match('/\\bis_active\\b\\s*=\\s*(?:1|true)/', $normalized) === 1;
     $filtersPrimaryMembership = preg_match('/\\bis_primary\\b\\s*=\\s*(?:1|true)/', $normalized) === 1;
     $selected = [];
@@ -559,20 +635,33 @@ function matrix_catalog_test_selected_entry_ids(array $scenario, string $sql, st
             continue;
         }
 
+        if ($filtersAlternativeOrUsStatus && !in_array($entry['status'] ?? null, ['alternative', 'us'], true)) {
+            continue;
+        }
+
         if ($filtersActive && (int)($entry['is_active'] ?? 0) !== 1) {
             continue;
         }
 
-        if (!$usesCategoryMembership) {
+        if (!$usesCategoryMembership && !$usesCategoryUsVendors) {
             $selected[] = (int)$entry['id'];
             continue;
         }
 
-        if (!matrix_catalog_test_entry_belongs_to_category($entry, $categoryId)) {
+        $belongsToCategory = matrix_catalog_test_entry_belongs_to_category($entry, $categoryId);
+        $isCategoryUsVendor = $usesCategoryUsVendors
+            && ($entry['status'] ?? null) === 'us'
+            && matrix_catalog_test_entry_is_category_us_vendor($scenario, $entry, $categoryId);
+
+        if (!$belongsToCategory && !$isCategoryUsVendor) {
             continue;
         }
 
-        if ($filtersPrimaryMembership && !matrix_catalog_test_entry_primary_matches_category($entry, $categoryId)) {
+        if (
+            $filtersPrimaryMembership
+            && !$isCategoryUsVendor
+            && !matrix_catalog_test_entry_primary_matches_category($entry, $categoryId)
+        ) {
             continue;
         }
 
@@ -651,6 +740,68 @@ function matrix_catalog_test_rows_for_sql(string $sql, array $params, array $sce
             ],
             $scenario['groups'],
         );
+    }
+
+    if (str_contains($normalized, 'scoring_metadata')) {
+        $selectedIds = matrix_catalog_test_entry_ids_from_params($params);
+
+        return array_values(array_filter(
+            $scenario['scoringMetadata'] ?? [],
+            static fn (array $row): bool => count($selectedIds) === 0 || in_array((int)$row['entry_id'], $selectedIds, true),
+        ));
+    }
+
+    if (str_contains($normalized, 'positive_signals')) {
+        $selectedIds = matrix_catalog_test_entry_ids_from_params($params);
+        $usesGermanLocale = matrix_catalog_test_sql_uses_german_locale($sql);
+
+        return array_values(array_map(
+            static fn (array $row): array => [
+                'entry_id' => $row['entry_id'],
+                'signal_key' => $row['signal_key'],
+                'text' => matrix_catalog_test_localized_value($row, 'text', $usesGermanLocale),
+                'text_de' => $row['text_de'] ?? null,
+                'dimension' => $row['dimension'],
+                'amount' => $row['amount'],
+                'source_url' => $row['source_url'] ?? null,
+            ],
+            array_values(array_filter(
+                $scenario['positiveSignals'] ?? [],
+                static fn (array $row): bool => count($selectedIds) === 0 || in_array((int)$row['entry_id'], $selectedIds, true),
+            )),
+        ));
+    }
+
+    if (str_contains($normalized, 'reservations')) {
+        $selectedIds = matrix_catalog_test_entry_ids_from_params($params);
+        $usesGermanLocale = matrix_catalog_test_sql_uses_german_locale($sql);
+
+        return array_values(array_map(
+            static fn (array $row): array => [
+                'entry_id' => $row['entry_id'],
+                'reservation_key' => $row['reservation_key'],
+                'text' => matrix_catalog_test_localized_value($row, 'text', $usesGermanLocale),
+                'text_de' => $row['text_de'] ?? null,
+                'severity' => $row['severity'],
+                'event_date' => $row['event_date'] ?? null,
+                'source_url' => $row['source_url'] ?? null,
+                'penalty_tier' => $row['penalty_tier'] ?? null,
+                'penalty_amount' => $row['penalty_amount'] ?? null,
+            ],
+            array_values(array_filter(
+                $scenario['reservations'] ?? [],
+                static fn (array $row): bool => count($selectedIds) === 0 || in_array((int)$row['entry_id'], $selectedIds, true),
+            )),
+        ));
+    }
+
+    if (str_contains($normalized, 'entry_tags')) {
+        $selectedIds = matrix_catalog_test_entry_ids_from_params($params);
+
+        return array_values(array_filter(
+            $scenario['tags'] ?? [],
+            static fn (array $row): bool => count($selectedIds) === 0 || in_array((int)$row['entry_id'], $selectedIds, true),
+        ));
     }
 
     if (str_contains($normalized, 'catalog_entries')) {
@@ -875,16 +1026,26 @@ describe("catalog matrix API endpoint", () => {
       emoji: "chat",
     });
     expect(payload.data.groups[0]).toMatchObject({
+      id: "trust",
+      label: "Vertrauen",
+      description: "Kategorieübergreifende Bewertung aus dem Vetting.",
+    });
+    expect(payload.data.groups[0]?.criteria[0]).toMatchObject({
+      id: "trust_score",
+      label: "Trust-Score",
+      helpText: "Unsere eigene Bewertung aus dem Vetting.",
+    });
+    expect(payload.data.groups[1]).toMatchObject({
       id: "compliance",
       label: "Compliance DE",
       description: "Rechtsraum",
     });
-    expect(payload.data.groups[0]?.criteria[0]).toMatchObject({
+    expect(payload.data.groups[1]?.criteria[0]).toMatchObject({
       id: "hosting_region",
       label: "Hosting-Region",
       helpText: "Wo Kontodaten hauptsächlich gehostet werden",
     });
-    expect(payload.data.groups[0]?.criteria[0]?.options).toEqual([
+    expect(payload.data.groups[1]?.criteria[0]?.options).toEqual([
       { id: "eu", label: "EU", displayTone: "positive" },
       { id: "global", label: "Global DE", displayTone: "neutral" },
     ]);
@@ -898,24 +1059,29 @@ describe("catalog matrix API endpoint", () => {
     expect(payload.meta).toMatchObject({
       category: "messaging",
       locale: "en",
-      groupCount: 2,
-      criterionCount: 2,
-      alternativeCount: 2,
+      groupCount: 3,
+      criterionCount: 3,
+      alternativeCount: 3,
     });
     expect(payload.data.groups.map((group) => group.id)).toEqual([
+      "trust",
       "compliance",
       "privacy",
     ]);
     expect(
       payload.data.groups[0]?.criteria.map((criterion) => criterion.id),
+    ).toEqual(["trust_score"]);
+    expect(
+      payload.data.groups[1]?.criteria.map((criterion) => criterion.id),
     ).toEqual(["hosting_region"]);
     expect(
-      payload.data.groups[0]?.criteria[0]?.options.map((option) => option.id),
+      payload.data.groups[1]?.criteria[0]?.options.map((option) => option.id),
     ).toEqual(["eu", "global"]);
 
     expect(payload.data.alternatives.map((entry) => entry.id).sort()).toEqual([
       "primary-chat",
       "secondary-chat",
+      "us-chat",
     ]);
     expect(payload.data.alternatives.map((entry) => entry.id)).not.toContain(
       "inactive-chat",
@@ -927,6 +1093,46 @@ describe("catalog matrix API endpoint", () => {
       category: "productivity",
       secondaryCategories: ["messaging"],
     });
+    expect(findAlternative(payload, "us-chat")).toMatchObject({
+      country: "us",
+      category: null,
+      secondaryCategories: [],
+    });
+  });
+
+  it("prepends the global Trust Score criterion and exposes only vetted scores", async () => {
+    const payload = expectMatrixPayload(
+      await runMatrixRequest({ category: "messaging", locale: "en" }),
+    );
+    const primary = findAlternative(payload, "primary-chat");
+    const secondary = findAlternative(payload, "secondary-chat");
+    const usVendor = findAlternative(payload, "us-chat");
+
+    expect(payload.data.groups[0]).toMatchObject({
+      id: "trust",
+      label: "Trust",
+    });
+    expect(payload.data.groups[0]?.criteria[0]).toMatchObject({
+      id: "trust_score",
+      label: "Trust Score",
+      valueType: "number",
+      semantics: "beneficial",
+      filterMode: "none",
+      options: [],
+    });
+    expect(primary.facts.trust_score).toMatchObject({
+      status: "verified",
+    });
+    expect(typeof primary.facts.trust_score.value).toBe("number");
+    expect(primary.facts.trust_score).not.toHaveProperty("source");
+    expect(secondary.facts.trust_score).toEqual({
+      status: "unverified",
+      value: null,
+    });
+    expect(usVendor.facts.trust_score).toMatchObject({
+      status: "verified",
+    });
+    expect(typeof usVendor.facts.trust_score.value).toBe("number");
   });
 
   it("serves repeated matrix requests from cache without requiring database access", async () => {

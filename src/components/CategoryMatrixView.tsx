@@ -922,6 +922,10 @@ function renderVerifiedValue(
     );
   }
 
+  if (criterion.id === "trust_score" && typeof value === "number") {
+    return renderTrustScoreValue(value, language);
+  }
+
   switch (criterion.valueType) {
     case "boolean":
       return typeof value === "boolean"
@@ -950,6 +954,36 @@ function renderVerifiedValue(
     default:
       return Array.isArray(value) ? value.join(", ") : String(value);
   }
+}
+
+function renderTrustScoreValue(value: number, language: string): ReactNode {
+  const tone = trustScoreTone(value);
+  const score = new Intl.NumberFormat(
+    language.startsWith("de") ? "de-DE" : "en-US",
+    {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+    },
+  ).format(value);
+
+  return (
+    <span className={`category-matrix-fact category-matrix-fact--${tone}`}>
+      {renderBooleanVerdictIcon(tone)}
+      <span className="category-matrix-fact-label">{score}/10</span>
+    </span>
+  );
+}
+
+function trustScoreTone(value: number): MatrixBooleanTone {
+  if (value < 5) {
+    return "negative";
+  }
+
+  if (value <= 7) {
+    return "warning";
+  }
+
+  return "positive";
 }
 
 function renderMultiEnumValue(

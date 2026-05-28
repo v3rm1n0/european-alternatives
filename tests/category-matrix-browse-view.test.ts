@@ -817,6 +817,58 @@ describe("browse matrix view mode", () => {
     expect(browseTestMocks.filterProps[0]?.matrixViewAvailable).toBe(false);
   });
 
+  it("does not unlock matrix mode from Trust Score alone", async () => {
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix(
+        "messaging",
+        {
+          status: "ready",
+          matrix: matrix(
+            [
+              {
+                id: "trust",
+                label: "Trust",
+                description: "Cross-category score from our vetting.",
+                criteria: [
+                  criterion("trust_score", "none", {
+                    label: "Trust Score",
+                    valueType: "number",
+                    semantics: "beneficial",
+                  }),
+                ],
+              },
+              {
+                id: "privacy",
+                label: "Privacy",
+                description: null,
+                criteria: [
+                  criterion("e2ee", "must_match", {
+                    label: "End-to-end encryption",
+                    valueType: "boolean",
+                    semantics: "beneficial",
+                  }),
+                ],
+              },
+            ],
+            [
+              matrixAlternative("alpha-chat", "Alpha Chat", {
+                trust_score: { status: "verified", value: 8.6 },
+                e2ee: { status: "unverified", value: null },
+              }),
+            ],
+          ),
+          error: null,
+        },
+      ),
+      search: "category=messaging",
+      viewMode: "matrix",
+    });
+
+    expect(browseTestMocks.filterProps[0]?.matrixViewAvailable).toBe(false);
+    expect(browseTestMocks.filterProps[0]?.viewMode).toBe("grid");
+    expect(html).not.toContain("<table");
+  });
+
   it("offers matrix mode as soon as at least one fact in the loaded matrix is verified", async () => {
     await renderBrowsePage({
       loadedCategoryMatrix: loadedMatrix(
@@ -894,6 +946,63 @@ describe("browse matrix view mode", () => {
     // Same for false → negative class + cross icon + localized "No" text.
     expect(html).toMatch(/category-matrix-fact--negative[\s\S]{0,500}?<svg/u);
     expect(html).toMatch(/category-matrix-fact--negative[\s\S]{0,500}?No/u);
+  });
+
+  it("renders the Trust Score as the first matrix criterion with score-scale verdict colors", async () => {
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix(
+        "messaging",
+        {
+          status: "ready",
+          matrix: matrix(
+            [
+              {
+                id: "trust",
+                label: "Trust",
+                description: "Cross-category score from our vetting.",
+                criteria: [
+                  criterion("trust_score", "none", {
+                    label: "Trust Score",
+                    valueType: "number",
+                    semantics: "beneficial",
+                  }),
+                ],
+              },
+              {
+                id: "privacy",
+                label: "Privacy",
+                description: null,
+                criteria: [
+                  criterion("e2ee", "must_match", {
+                    label: "End-to-end encryption",
+                    valueType: "boolean",
+                    semantics: "beneficial",
+                  }),
+                ],
+              },
+            ],
+            [
+              matrixAlternative("alpha-chat", "Alpha Chat", {
+                trust_score: { status: "verified", value: 8.6 },
+                e2ee: { status: "verified", value: true },
+              }),
+              matrixAlternative("zeta-chat", "Zeta Chat", {
+                trust_score: { status: "verified", value: 3.6 },
+                e2ee: { status: "verified", value: false },
+              }),
+            ],
+          ),
+          error: null,
+        },
+      ),
+      search: "category=messaging",
+      viewMode: "matrix",
+    });
+
+    expect(html).toContain("Trust");
+    expectInOrder(html, ["Trust Score", "End-to-end encryption"]);
+    expect(html).toMatch(/category-matrix-fact--positive[\s\S]{0,500}?8\.6\/10/u);
+    expect(html).toMatch(/category-matrix-fact--negative[\s\S]{0,500}?3\.6\/10/u);
   });
 
   it("renders risk booleans from the user's perspective so false is positive and true is negative", async () => {

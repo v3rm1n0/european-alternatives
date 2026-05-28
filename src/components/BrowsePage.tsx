@@ -111,8 +111,9 @@ export default function BrowsePage() {
     readyCategoryMatrix.data.alternatives.length > 0 &&
     readyCategoryMatrix.data.groups.some((group) => group.criteria.length > 0) &&
     readyCategoryMatrix.data.alternatives.some((alternative) =>
-      Object.values(alternative.facts).some(
-        (fact) => fact.status === "verified",
+      Object.entries(alternative.facts).some(
+        ([criterionId, fact]) =>
+          criterionId !== "trust_score" && fact.status === "verified",
       ),
     );
 

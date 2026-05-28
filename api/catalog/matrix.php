@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../db.php';
 require_once __DIR__ . '/../cache.php';
 require_once __DIR__ . '/helpers.php';
+require_once __DIR__ . '/scoring.php';
 
 requireHttpMethod('GET');
 
@@ -156,6 +157,57 @@ if (!function_exists('matrixPublicFact')) {
     }
 }
 
+if (!function_exists('matrixTrustGroup')) {
+    function matrixTrustGroup(string $locale): array
+    {
+        return [
+            'id' => 'trust',
+            'label' => $locale === 'de' ? 'Vertrauen' : 'Trust',
+            'description' => $locale === 'de'
+                ? 'Kategorieübergreifende Bewertung aus dem Vetting.'
+                : 'Cross-category score from our vetting.',
+            'criteria' => [
+                [
+                    'id' => 'trust_score',
+                    'label' => $locale === 'de' ? 'Trust-Score' : 'Trust Score',
+                    'helpText' => $locale === 'de'
+                        ? 'Unsere eigene Bewertung aus dem Vetting.'
+                        : 'Our own score from the vetting process.',
+                    'valueType' => 'number',
+                    'semantics' => 'beneficial',
+                    'filterMode' => 'none',
+                    'options' => [],
+                ],
+            ],
+        ];
+    }
+}
+
+if (!function_exists('matrixPublicTrustScoreFact')) {
+    function matrixPublicTrustScoreFact(array $trustResult): array
+    {
+        if (($trustResult['trustScoreStatus'] ?? null) !== 'ready') {
+            return [
+                'status' => 'unverified',
+                'value' => null,
+            ];
+        }
+
+        $score = $trustResult['trustScore'] ?? null;
+        if (!is_numeric($score)) {
+            return [
+                'status' => 'unverified',
+                'value' => null,
+            ];
+        }
+
+        return [
+            'status' => 'verified',
+            'value' => (float)$score,
+        ];
+    }
+}
+
 $validLocales = ['en', 'de'];
 
 $rawCategory = $_GET['category'] ?? null;
@@ -186,7 +238,7 @@ if (!is_string($locale) || !in_array($locale, $validLocales, true)) {
     ]);
 }
 
-$cacheParams = ['category' => $category, 'locale' => $locale];
+$cacheParams = ['category' => $category, 'locale' => $locale, 'v' => 'trust-us-v1'];
 serveCachedResponse('matrix', $cacheParams);
 
 try {
@@ -225,7 +277,7 @@ $optionLabelExpr = $locale === 'de'
     : 'mco.label_en';
 
 try {
-    $categorySql = <<<SQL
+$categorySql = <<<SQL
 SELECT
     c.id,
     c.emoji,
@@ -340,24 +392,39 @@ SQL;
     ]);
 
     $entriesSql = <<<SQL
-SELECT
+SELECT DISTINCT
     ce.id,
     ce.slug,
+    ce.status,
     ce.name,
     ce.country_code,
     ce.website_url,
-    ce.logo_path
+    ce.logo_path,
+    ce.open_source_level,
+    ce.self_hostable
 FROM catalog_entries ce
-/* CATALOG_ENTRIES ENTRY_CATEGORIES */
-JOIN entry_categories match_ec ON match_ec.entry_id = ce.id
-                              AND match_ec.category_id = :category
-WHERE ce.status = 'alternative'
+/* CATALOG_ENTRIES ENTRY_CATEGORIES CATEGORY_US_VENDORS */
+LEFT JOIN entry_categories match_ec ON match_ec.entry_id = ce.id
+                                   AND match_ec.category_id = :category
+LEFT JOIN category_us_vendors cuv ON cuv.entry_id = ce.id
+                                 AND cuv.category_id = :category_for_us
+WHERE ce.status IN ('alternative', 'us')
   AND ce.is_active = 1
+  AND (
+        match_ec.entry_id IS NOT NULL
+        OR (
+          ce.status = 'us'
+          AND cuv.entry_id IS NOT NULL
+        )
+      )
 ORDER BY ce.name ASC, ce.id ASC
 SQL;
 
     $entriesStmt = $pdo->prepare($entriesSql);
-    $entriesStmt->execute(['category' => $category]);
+    $entriesStmt->execute([
+        'category' => $category,
+        'category_for_us' => $category,
+    ]);
     $entryRows = $entriesStmt->fetchAll();
     matrixSortRows($entryRows, ['name' => 'asc', 'id' => 'asc']);
 
@@ -368,6 +435,10 @@ SQL;
 
     $membershipsByEntry = [];
     $factsByEntryAndCriterion = [];
+    $tagsByEntry = [];
+    $reservationsByEntry = [];
+    $signalsByEntry = [];
+    $scoringMetaByEntry = [];
 
     if (count($entryIds) > 0) {
         [$entryInClause, $entryParams] = matrixBuildInPlaceholders($entryIds, 'entry');
@@ -396,6 +467,133 @@ SQL;
         foreach ($membershipRows as $membershipRow) {
             $entryId = (int)$membershipRow['entry_id'];
             $membershipsByEntry[$entryId][] = $membershipRow;
+        }
+
+        $tagsSql = <<<SQL
+SELECT
+    et.entry_id,
+    t.slug
+FROM entry_tags et
+JOIN tags t ON t.id = et.tag_id
+WHERE et.entry_id IN ({$entryInClause})
+ORDER BY et.entry_id ASC, et.sort_order ASC
+SQL;
+
+        $tagsStmt = $pdo->prepare($tagsSql);
+        $tagsStmt->execute($entryParams);
+        $tagRows = $tagsStmt->fetchAll();
+
+        foreach ($tagRows as $tagRow) {
+            $entryId = (int)$tagRow['entry_id'];
+            $tagsByEntry[$entryId][] = (string)$tagRow['slug'];
+        }
+
+        $reservationTextExpr = $locale === 'de'
+            ? 'COALESCE(r.text_de, r.text_en)'
+            : 'r.text_en';
+
+        $reservationsSql = <<<SQL
+SELECT
+    r.entry_id,
+    r.reservation_key,
+    {$reservationTextExpr} AS text,
+    r.text_de,
+    r.severity,
+    r.event_date,
+    r.source_url,
+    r.penalty_tier,
+    r.penalty_amount
+FROM reservations r
+WHERE r.entry_id IN ({$entryInClause})
+ORDER BY r.entry_id ASC, r.sort_order ASC
+SQL;
+
+        $reservationsStmt = $pdo->prepare($reservationsSql);
+        $reservationsStmt->execute($entryParams);
+        $reservationRows = $reservationsStmt->fetchAll();
+
+        foreach ($reservationRows as $reservationRow) {
+            $entryId = (int)$reservationRow['entry_id'];
+            $reservation = [
+                'id' => $reservationRow['reservation_key'],
+                'text' => $reservationRow['text'],
+                'severity' => $reservationRow['severity'],
+            ];
+
+            if (($reservationRow['text_de'] ?? null) !== null) {
+                $reservation['textDe'] = $reservationRow['text_de'];
+            }
+            if (($reservationRow['event_date'] ?? null) !== null) {
+                $reservation['date'] = $reservationRow['event_date'];
+            }
+            if (($reservationRow['source_url'] ?? null) !== null) {
+                $reservation['sourceUrl'] = $reservationRow['source_url'];
+            }
+            if (($reservationRow['penalty_tier'] ?? null) !== null && ($reservationRow['penalty_amount'] ?? null) !== null) {
+                $reservation['penalty'] = [
+                    'tier' => $reservationRow['penalty_tier'],
+                    'amount' => (float)$reservationRow['penalty_amount'],
+                ];
+            }
+
+            $reservationsByEntry[$entryId][] = $reservation;
+        }
+
+        $signalTextExpr = $locale === 'de'
+            ? 'COALESCE(ps.text_de, ps.text_en)'
+            : 'ps.text_en';
+
+        $signalsSql = <<<SQL
+SELECT
+    ps.entry_id,
+    ps.signal_key,
+    {$signalTextExpr} AS text,
+    ps.text_de,
+    ps.dimension,
+    ps.amount,
+    ps.source_url
+FROM positive_signals ps
+WHERE ps.entry_id IN ({$entryInClause})
+ORDER BY ps.entry_id ASC, ps.sort_order ASC
+SQL;
+
+        $signalsStmt = $pdo->prepare($signalsSql);
+        $signalsStmt->execute($entryParams);
+        $signalRows = $signalsStmt->fetchAll();
+
+        foreach ($signalRows as $signalRow) {
+            $entryId = (int)$signalRow['entry_id'];
+            $signal = [
+                'id' => $signalRow['signal_key'],
+                'text' => $signalRow['text'],
+                'dimension' => $signalRow['dimension'],
+                'amount' => (float)$signalRow['amount'],
+                'sourceUrl' => $signalRow['source_url'] ?? '',
+            ];
+
+            if (($signalRow['text_de'] ?? null) !== null) {
+                $signal['textDe'] = $signalRow['text_de'];
+            }
+
+            $signalsByEntry[$entryId][] = $signal;
+        }
+
+        $scoringMetaSql = <<<SQL
+SELECT
+    sm.entry_id,
+    sm.base_class_override,
+    sm.is_ad_surveillance
+FROM scoring_metadata sm
+WHERE sm.entry_id IN ({$entryInClause})
+SQL;
+
+        $scoringMetaStmt = $pdo->prepare($scoringMetaSql);
+        $scoringMetaStmt->execute($entryParams);
+        $scoringMetaRows = $scoringMetaStmt->fetchAll();
+
+        foreach ($scoringMetaRows as $scoringMetaRow) {
+            $entryId = (int)$scoringMetaRow['entry_id'];
+            $scoringMetaByEntry[$entryId] = $scoringMetaRow;
         }
 
         $factsParams = $entryParams;
@@ -440,7 +638,7 @@ SQL;
     ]);
 }
 
-$groups = [];
+$groups = [matrixTrustGroup($locale)];
 $groupIndexById = [];
 foreach ($groupRows as $groupRow) {
     $groupIndexById[(int)$groupRow['id']] = count($groups);
@@ -453,12 +651,14 @@ foreach ($groupRows as $groupRow) {
 }
 
 $criteriaById = [];
-$criterionKeys = [];
-$criterionValueTypes = [];
+$criterionKeys = ['trust_score'];
+$matrixFactCriterionKeys = [];
+$criterionValueTypes = ['trust_score' => 'number'];
 foreach ($criterionRows as $criterionRow) {
     $criterionId = (int)$criterionRow['id'];
     $criterionKey = (string)$criterionRow['criterion_key'];
     $criterionKeys[] = $criterionKey;
+    $matrixFactCriterionKeys[] = $criterionKey;
     $criterionValueTypes[$criterionKey] = (string)$criterionRow['value_type'];
     $criteriaById[$criterionId] = [
         'groupId' => (int)$criterionRow['group_id'],
@@ -517,8 +717,18 @@ foreach ($entryRows as $entryRow) {
         $secondaryCategories[] = $categoryId;
     }
 
-    $facts = [];
-    foreach ($criterionKeys as $criterionKey) {
+    $trustResult = computeEntryTrustScore(
+        $entryRow,
+        $reservationsByEntry[$entryId] ?? [],
+        $signalsByEntry[$entryId] ?? [],
+        $scoringMetaByEntry[$entryId] ?? null,
+        $tagsByEntry[$entryId] ?? []
+    );
+
+    $facts = [
+        'trust_score' => matrixPublicTrustScoreFact($trustResult),
+    ];
+    foreach ($matrixFactCriterionKeys as $criterionKey) {
         $fact = $factsByEntryAndCriterion[$entryId][$criterionKey] ?? null;
         $facts[$criterionKey] = matrixPublicFact($fact, $criterionValueTypes[$criterionKey]);
     }
@@ -550,7 +760,7 @@ sendCacheableJsonResponse('matrix', $cacheParams, [
         'category' => $category,
         'locale' => $locale,
         'groupCount' => count($groups),
-        'criterionCount' => count($criterionRows),
+        'criterionCount' => count($criterionKeys),
         'alternativeCount' => count($alternatives),
     ],
 ]);
