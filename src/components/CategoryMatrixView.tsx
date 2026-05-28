@@ -886,7 +886,7 @@ function renderVerifiedValue(
   switch (criterion.valueType) {
     case "boolean":
       return typeof value === "boolean"
-        ? renderBooleanVerdict(value, t)
+        ? renderBooleanVerdict(value, criterion, t)
         : String(value);
     case "enum":
       return typeof value === "string"
@@ -915,29 +915,94 @@ function renderVerifiedValue(
   }
 }
 
-function renderBooleanVerdict(value: boolean, t: TranslateFn): ReactNode {
-  const toneClass = value
-    ? "category-matrix-fact--positive"
-    : "category-matrix-fact--negative";
+type MatrixBooleanTone = "positive" | "warning" | "negative" | "neutral";
+
+function renderBooleanVerdict(
+  value: boolean,
+  criterion: MatrixCriterion,
+  t: TranslateFn,
+): ReactNode {
+  const tone = booleanVerdictTone(value, criterion.semantics);
+  const toneClass = `category-matrix-fact--${tone}`;
   const label = t(value ? "matrixView.yes" : "matrixView.no");
 
   return (
     <span className={`category-matrix-fact ${toneClass}`}>
-      <svg
-        className="category-matrix-fact-icon"
-        viewBox="0 0 24 24"
-        fill="currentColor"
-        aria-hidden="true"
-      >
-        {value ? (
-          <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-        ) : (
-          <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-        )}
-      </svg>
+      {renderBooleanVerdictIcon(tone)}
       <span className="category-matrix-fact-label">{label}</span>
     </span>
   );
+}
+
+function booleanVerdictTone(
+  value: boolean,
+  semantics: MatrixCriterion["semantics"],
+): MatrixBooleanTone {
+  switch (semantics) {
+    case "beneficial":
+      return value ? "positive" : "negative";
+    case "harmful":
+    case "risk":
+      return value ? "negative" : "positive";
+    case "tradeoff":
+      return "warning";
+    case "informational":
+    case "neutral":
+    default:
+      return "neutral";
+  }
+}
+
+function renderBooleanVerdictIcon(tone: MatrixBooleanTone): ReactNode {
+  const className = "category-matrix-fact-icon";
+
+  switch (tone) {
+    case "positive":
+      return (
+        <svg
+          className={className}
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path d="M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+        </svg>
+      );
+    case "negative":
+      return (
+        <svg
+          className={className}
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+        </svg>
+      );
+    case "warning":
+      return (
+        <svg
+          className={className}
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
+        </svg>
+      );
+    case "neutral":
+    default:
+      return (
+        <svg
+          className={className}
+          viewBox="0 0 24 24"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path d="M5 11h14v2H5z" />
+        </svg>
+      );
+  }
 }
 
 function renderOption(

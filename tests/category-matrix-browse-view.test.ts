@@ -325,6 +325,7 @@ function readyMatrixResult(): CategoryMatrixLoadResult {
             criterion("e2ee", "must_match", {
               label: "End-to-end encryption",
               valueType: "boolean",
+              semantics: "beneficial",
             }),
             criterion("hosting_region", "must_match", {
               label: "Hosting region",
@@ -891,6 +892,47 @@ describe("browse matrix view mode", () => {
     // Same for false → negative class + cross icon + localized "No" text.
     expect(html).toMatch(/category-matrix-fact--negative[\s\S]{0,500}?<svg/u);
     expect(html).toMatch(/category-matrix-fact--negative[\s\S]{0,500}?No/u);
+  });
+
+  it("renders risk booleans from the user's perspective so false is positive and true is negative", async () => {
+    const html = await renderBrowsePage({
+      loadedCategoryMatrix: loadedMatrix(
+        "messaging",
+        {
+          status: "ready",
+          matrix: matrix(
+            [
+              {
+                id: "identity",
+                label: "Identity",
+                description: null,
+                criteria: [
+                  criterion("phone_number_required", "must_match", {
+                    label: "Phone number required",
+                    valueType: "boolean",
+                    semantics: "risk",
+                  }),
+                ],
+              },
+            ],
+            [
+              matrixAlternative("alpha-chat", "Alpha Chat", {
+                phone_number_required: { status: "verified", value: false },
+              }),
+              matrixAlternative("zeta-chat", "Zeta Chat", {
+                phone_number_required: { status: "verified", value: true },
+              }),
+            ],
+          ),
+          error: null,
+        },
+      ),
+      search: "category=messaging",
+      viewMode: "matrix",
+    });
+
+    expect(html).toMatch(/category-matrix-fact--positive[\s\S]{0,500}?No/u);
+    expect(html).toMatch(/category-matrix-fact--negative[\s\S]{0,500}?Yes/u);
   });
 
   it("places each group label in a header cell whose colSpan matches its criteria count", async () => {

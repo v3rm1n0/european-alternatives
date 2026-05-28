@@ -122,6 +122,7 @@ function fixture(): CategoryMatrixApiResponse {
         criterion("e2ee", "must_match", {
           label: "End-to-end encryption",
           valueType: "boolean",
+          semantics: "beneficial",
         }),
         criterion("hosting_region", "must_match", {
           label: "Hosting region",

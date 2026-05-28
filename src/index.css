@@ -2023,10 +2023,24 @@ button:disabled {
   gap: var(--spacing-xs);
 }
 
+.category-matrix-fact--warning {
+  background: var(--warning-10);
+  border: 1px solid var(--warning-30);
+  color: var(--warning);
+  gap: var(--spacing-xs);
+}
+
 .category-matrix-fact--negative {
   background: var(--error-10);
   border: 1px solid var(--error-30);
   color: var(--error);
+  gap: var(--spacing-xs);
+}
+
+.category-matrix-fact--neutral {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
   gap: var(--spacing-xs);
 }
 
