@@ -1673,6 +1673,7 @@ final class StaleApiTestStatement
     public function execute(?array $params = null): bool { $this->params = $params ?? []; return true; }
     public function fetch(int $mode = 0): mixed { if ($this->fetched) return false; $this->fetched = true; $rows = $this->rows(); return $rows[0] ?? false; }
     public function fetchAll(int $mode = 0): array { return $this->rows(); }
+    public function fetchColumn(int $column = 0): mixed { $row = $this->fetch(); if (!is_array($row)) return false; $values = array_values($row); return $values[$column] ?? false; }
     private function rows(): array { return stale_api_rows_for_sql($this->sql, $this->params, $this->scenario); }
 }
 
@@ -1692,6 +1693,10 @@ function getDatabaseConnection(): StaleApiTestPdo
 function stale_api_rows_for_sql(string $sql, array $params, array $scenario): array
 {
     $normalized = strtolower(preg_replace('/\\s+/', ' ', $sql) ?? $sql);
+
+    if (str_contains($normalized, 'information_schema.columns')) {
+        return [['COUNT(*)' => 1]];
+    }
 
     if (str_contains($normalized, 'from matrix_facts')) {
         // The fix for issue #468: api/catalog/matrix.php must SELECT the
@@ -1715,6 +1720,7 @@ function stale_api_rows_for_sql(string $sql, array $params, array $scenario): ar
             'id' => $c['id'], 'group_id' => $c['group_id'], 'criterion_key' => $c['criterion_key'],
             'label' => $c['label_en'], 'help_text' => $c['help_text_en'], 'value_type' => $c['value_type'],
             'semantics' => $c['semantics'], 'filter_mode' => $c['filter_mode'],
+            'display_mode' => $c['display_mode'] ?? 'default',
             'sort_order' => $c['sort_order'] ?? 0,
         ], $scenario['criteria']);
     }

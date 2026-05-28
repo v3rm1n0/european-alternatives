@@ -563,6 +563,17 @@ final class MatrixCatalogTestStatement
         return $this->rows();
     }
 
+    public function fetchColumn(int $column = 0): mixed
+    {
+        $row = $this->fetch();
+        if (!is_array($row)) {
+            return false;
+        }
+
+        $values = array_values($row);
+        return $values[$column] ?? false;
+    }
+
     private function rows(): array
     {
         return matrix_catalog_test_rows_for_sql($this->sql, $this->params, $this->scenario);
@@ -784,6 +795,10 @@ function matrix_catalog_test_rows_for_sql(string $sql, array $params, array $sce
         $categoryId = (string)$scenario['category']['id'];
     }
 
+    if (str_contains($normalized, 'information_schema.columns')) {
+        return [['COUNT(*)' => 1]];
+    }
+
     if (str_contains($normalized, 'matrix_fact_attempts') || str_contains($normalized, 'matrix_fact_verifications')) {
         return $scenario['auditRows'];
     }
@@ -825,6 +840,7 @@ function matrix_catalog_test_rows_for_sql(string $sql, array $params, array $sce
                 'value_type' => $criterion['value_type'],
                 'semantics' => $criterion['semantics'],
                 'filter_mode' => $criterion['filter_mode'],
+                'display_mode' => $criterion['display_mode'] ?? 'default',
                 'sort_order' => $criterion['sort_order'] ?? 0,
             ],
             $scenario['criteria'],

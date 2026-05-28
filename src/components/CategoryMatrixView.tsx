@@ -39,11 +39,6 @@ const UNVERIFIED_FACT: MatrixFact = {
   value: null,
 };
 
-const FULL_COVERAGE_MULTI_ENUM_CRITERIA = new Set([
-  "supported_platforms",
-  "reactions_threads",
-]);
-
 type MatrixSortKey = "name" | "trust_score";
 type MatrixSortDirection = "asc" | "desc";
 
@@ -2122,7 +2117,7 @@ function renderMultiEnumValue(
   criterion: MatrixCriterion,
   t: TranslateFn,
 ): ReactNode {
-  if (FULL_COVERAGE_MULTI_ENUM_CRITERIA.has(criterion.id)) {
+  if (criterion.displayMode === "coverage") {
     return renderFullCoverageOptions(value, criterion, t);
   }
 

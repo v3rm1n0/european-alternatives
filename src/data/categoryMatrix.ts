@@ -11,6 +11,7 @@ import type {
   MatrixAlternative,
   MatrixCriterion,
   MatrixCriterionOption,
+  MatrixDisplayMode,
   MatrixDisplayTone,
   MatrixFact,
   MatrixFactValue,
@@ -49,6 +50,8 @@ const MATRIX_FILTER_MODES: MatrixFilterMode[] = [
   "range",
   "multi_select",
 ];
+
+const MATRIX_DISPLAY_MODES: MatrixDisplayMode[] = ["default", "coverage"];
 
 const MATRIX_DISPLAY_TONES: MatrixDisplayTone[] = [
   "positive",
@@ -243,6 +246,8 @@ function isMatrixCriterion(value: unknown): value is MatrixCriterion {
     isMatrixValueType(value.valueType) &&
     isMatrixSemantics(value.semantics) &&
     isMatrixFilterMode(value.filterMode) &&
+    (value.displayMode === undefined ||
+      isMatrixDisplayMode(value.displayMode)) &&
     Array.isArray(value.options) &&
     value.options.every(isMatrixCriterionOption)
   );
@@ -256,6 +261,13 @@ function isMatrixCriterionOption(
     typeof value.id === "string" &&
     typeof value.label === "string" &&
     (value.displayTone === undefined || isMatrixDisplayTone(value.displayTone))
+  );
+}
+
+function isMatrixDisplayMode(value: unknown): value is MatrixDisplayMode {
+  return (
+    typeof value === "string" &&
+    MATRIX_DISPLAY_MODES.includes(value as MatrixDisplayMode)
   );
 }
 

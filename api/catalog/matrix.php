@@ -271,6 +271,41 @@ $criterionLabelExpr = $locale === 'de'
 $criterionHelpExpr = $locale === 'de'
     ? "COALESCE(NULLIF(mc.help_text_de, ''), mc.help_text_en)"
     : 'mc.help_text_en';
+$criterionDisplayModeFallbackExpr = "CASE
+        WHEN mc.value_type = 'multi_enum'
+         AND (
+              mc.criterion_key IN (
+                'supported_platforms',
+                'supported_apps',
+                'supported_client_platforms',
+                'distribution_channels',
+                'mobile_app_distribution',
+                'player_distribution_channels',
+                'supported_device_form_factors',
+                'reactions_threads',
+                'scheduled_or_pinned_messages'
+              )
+              OR mc.criterion_key LIKE '%_features'
+              OR mc.criterion_key LIKE 'supported_%'
+            )
+        THEN 'coverage'
+        ELSE 'default'
+    END";
+$criterionDisplayModeExpr = $criterionDisplayModeFallbackExpr;
+
+try {
+    $displayModeColumnStmt = $pdo->query(
+        "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+         WHERE TABLE_SCHEMA = DATABASE()
+           AND TABLE_NAME = 'matrix_criteria'
+           AND COLUMN_NAME = 'display_mode'"
+    );
+    if ((int)$displayModeColumnStmt->fetchColumn() > 0) {
+        $criterionDisplayModeExpr = 'mc.display_mode';
+    }
+} catch (Throwable) {
+    $criterionDisplayModeExpr = $criterionDisplayModeFallbackExpr;
+}
 
 $optionLabelExpr = $locale === 'de'
     ? "COALESCE(NULLIF(mco.label_de, ''), mco.label_en)"
@@ -329,6 +364,7 @@ SELECT
     mc.value_type,
     mc.semantics,
     mc.filter_mode,
+    {$criterionDisplayModeExpr} AS display_mode,
     mc.sort_order
 FROM matrix_criteria mc
 JOIN matrix_criterion_groups mcg ON mcg.id = mc.group_id
@@ -657,6 +693,7 @@ foreach ($criterionRows as $criterionRow) {
             'valueType' => $criterionRow['value_type'],
             'semantics' => $criterionRow['semantics'],
             'filterMode' => $criterionRow['filter_mode'],
+            'displayMode' => $criterionRow['display_mode'] ?? 'default',
             'options' => [],
         ],
     ];

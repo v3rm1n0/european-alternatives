@@ -74,6 +74,7 @@ function criterion(
     valueType: overrides.valueType ?? "boolean",
     semantics: overrides.semantics ?? "informational",
     filterMode,
+    displayMode: overrides.displayMode,
     options: overrides.options ?? [],
   };
 }
@@ -129,6 +130,7 @@ function fixture(): CategoryMatrixApiResponse {
         criterion("supported_platforms", "multi_select", {
           label: "Supported platforms",
           valueType: "multi_enum",
+          displayMode: "coverage",
           options: [
             { id: "android", label: "Android", displayTone: "neutral" },
             { id: "ios", label: "iOS", displayTone: "neutral" },
@@ -138,6 +140,7 @@ function fixture(): CategoryMatrixApiResponse {
         criterion("reactions_threads", "multi_select", {
           label: "Reactions and threads",
           valueType: "multi_enum",
+          displayMode: "coverage",
           options: [
             { id: "reactions", label: "Reactions", displayTone: "positive" },
             { id: "threads", label: "Threads", displayTone: "positive" },

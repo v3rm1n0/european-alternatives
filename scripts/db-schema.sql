@@ -100,6 +100,7 @@ CREATE TABLE `matrix_criteria` (
   `value_type`    ENUM('boolean','enum','multi_enum','number','text','url','date') NOT NULL,
   `semantics`     ENUM('beneficial','harmful','neutral','tradeoff','informational','risk') NOT NULL DEFAULT 'neutral',
   `filter_mode`   ENUM('none','optional','must_match','range','multi_select') NOT NULL DEFAULT 'none',
+  `display_mode`  ENUM('default','coverage') NOT NULL DEFAULT 'default',
   `sort_order`    INT             NOT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_mc_category_key` (`category_id`, `criterion_key`),

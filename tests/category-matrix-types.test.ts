@@ -35,6 +35,7 @@ import type {
   MatrixAlternative,
   MatrixCriterion,
   MatrixCriterionOption,
+  MatrixDisplayMode,
   MatrixDisplayTone,
   MatrixFact,
   MatrixFactValue,
@@ -101,6 +102,7 @@ const criterion = {
   valueType: "enum",
   semantics: "tradeoff",
   filterMode: "must_match",
+  displayMode: "coverage",
   options: [criterionOption],
 } satisfies MatrixCriterion;
 
@@ -248,6 +250,7 @@ expectTypeOf<MatrixCriterion>().toEqualTypeOf<{
   valueType: MatrixValueType;
   semantics: MatrixSemantics;
   filterMode: MatrixFilterMode;
+  displayMode?: MatrixDisplayMode;
   options: MatrixCriterionOption[];
 }>();
 expectTypeOf<MatrixCriterionOption>().toEqualTypeOf<{

@@ -215,6 +215,10 @@ describe("matrix criteria database schema", () => {
     expect(normalizeSql(criteria)).toMatch(
       /`filter_mode`\s+ENUM\([^)]*'none'[^)]*'optional'[^)]*'must_match'[^)]*'range'[^)]*'multi_select'[^)]*\)\s+NOT NULL\s+DEFAULT\s+'none'/,
     );
+    expectEnumColumn(criteria, "display_mode", ["default", "coverage"]);
+    expect(normalizeSql(criteria)).toMatch(
+      /`display_mode`\s+ENUM\([^)]*'default'[^)]*'coverage'[^)]*\)\s+NOT NULL\s+DEFAULT\s+'default'/,
+    );
   });
 
   it("scopes enum options to one criterion without linking matrix metadata to products or Trust Score tables", () => {

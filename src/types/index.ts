@@ -101,12 +101,16 @@ export type CountryCode =
   | "gb"
   | "is"
   // Tier 2 — Non-Tier-1 jurisdictions (extend as needed)
+  | "au"
+  | "ae"
   | "ca"
   | "us"
   | "in"
+  | "jp"
   | "sa"
   | "mx"
   | "cn"
+  | "vg"
   // Meta
   | "eu"
   | "oss";
@@ -217,6 +221,8 @@ export type MatrixFilterMode =
   | "range"
   | "multi_select";
 
+export type MatrixDisplayMode = "default" | "coverage";
+
 export type MatrixDisplayTone =
   | "positive"
   | "warning"
@@ -238,6 +244,7 @@ export interface MatrixCriterion {
   valueType: MatrixValueType;
   semantics: MatrixSemantics;
   filterMode: MatrixFilterMode;
+  displayMode?: MatrixDisplayMode;
   options: MatrixCriterionOption[];
 }
 
