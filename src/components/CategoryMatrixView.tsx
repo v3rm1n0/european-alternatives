@@ -1,6 +1,16 @@
 import type { CSSProperties, ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import {
+  applyMatrixColumnFilters,
+  matrixFactMatchesColumnFilter,
+  upsertMatrixColumnFilter,
+  withoutMatrixColumnFilter,
+} from "../utils/categoryMatrixColumnFilters";
+import type {
+  MatrixColumnFilter,
+  MatrixColumnFilterStatus,
+} from "../utils/categoryMatrixColumnFilters";
 import { sanitizeHref } from "../utils/sanitizeHref";
 import CategoryMatrixToolbar, {
   type MatrixDensity,
@@ -163,6 +173,10 @@ export default function CategoryMatrixView({
     key: null,
     direction: "asc",
   });
+  const [columnFilters, setColumnFilters] = useState<MatrixColumnFilter[]>([]);
+  const [openFilterCriterionId, setOpenFilterCriterionId] = useState<
+    string | null
+  >(null);
   const topScrollRef = useRef<HTMLDivElement | null>(null);
   const bottomScrollRef = useRef<HTMLDivElement | null>(null);
   const tableRef = useRef<HTMLTableElement | null>(null);
@@ -177,34 +191,38 @@ export default function CategoryMatrixView({
           ),
     [matrix.data.alternatives, visibleAlternativeIds],
   );
-  const sortedBrowseFilteredAlternatives = useMemo(
-    () => sortMatrixAlternatives(browseFilteredAlternatives, sortState),
-    [browseFilteredAlternatives, sortState],
+  const matrixFilteredAlternatives = useMemo(
+    () => applyMatrixColumnFilters(browseFilteredAlternatives, columnFilters),
+    [browseFilteredAlternatives, columnFilters],
+  );
+  const sortedMatrixFilteredAlternatives = useMemo(
+    () => sortMatrixAlternatives(matrixFilteredAlternatives, sortState),
+    [matrixFilteredAlternatives, sortState],
   );
   const pinnedAlternatives = useMemo(
     () =>
-      sortedBrowseFilteredAlternatives.filter((alternative) =>
+      sortedMatrixFilteredAlternatives.filter((alternative) =>
         pinnedIds.has(alternative.id),
       ),
-    [sortedBrowseFilteredAlternatives, pinnedIds],
+    [sortedMatrixFilteredAlternatives, pinnedIds],
   );
   const orderedAlternatives = useMemo(() => {
     if (pinnedAlternatives.length === 0) {
-      return sortedBrowseFilteredAlternatives;
+      return sortedMatrixFilteredAlternatives;
     }
     const pinnedSet = new Set(pinnedAlternatives.map((alt) => alt.id));
-    const unpinned = sortedBrowseFilteredAlternatives.filter(
+    const unpinned = sortedMatrixFilteredAlternatives.filter(
       (alternative) => !pinnedSet.has(alternative.id),
     );
     return [...pinnedAlternatives, ...unpinned];
-  }, [sortedBrowseFilteredAlternatives, pinnedAlternatives]);
+  }, [sortedMatrixFilteredAlternatives, pinnedAlternatives]);
   const focusMode = focusedOnly && pinnedAlternatives.length > 0;
   const visibleAlternatives = focusMode
     ? pinnedAlternatives
     : orderedAlternatives;
   const comparisonAlternatives = focusMode
     ? pinnedAlternatives
-    : browseFilteredAlternatives;
+    : matrixFilteredAlternatives;
   const focusedEmpty = focusedOnly && pinnedAlternatives.length === 0;
   const pinnedCount = useMemo(
     () =>
@@ -227,6 +245,26 @@ export default function CategoryMatrixView({
   const clearPins = () => {
     setPinnedIds(new Set<string>());
     setFocusedOnly(false);
+  };
+  const applyColumnFilter = (filter: MatrixColumnFilter) => {
+    setColumnFilters((previous) => upsertMatrixColumnFilter(previous, filter));
+  };
+  const clearColumnFilter = (criterionId: string) => {
+    setColumnFilters((previous) =>
+      withoutMatrixColumnFilter(previous, criterionId),
+    );
+    setOpenFilterCriterionId((previous) =>
+      previous === criterionId ? null : previous,
+    );
+  };
+  const clearColumnFilters = () => {
+    setColumnFilters([]);
+    setOpenFilterCriterionId(null);
+  };
+  const toggleColumnFilterPopover = (criterionId: string) => {
+    setOpenFilterCriterionId((previous) =>
+      previous === criterionId ? null : criterionId,
+    );
   };
   const toggleSort = (key: MatrixSortKey) => {
     setSortState((previous) =>
@@ -335,9 +373,21 @@ export default function CategoryMatrixView({
     () => filteredGroups.flatMap((group) => group.criteria),
     [filteredGroups],
   );
+  const visibleOpenFilterCriterionId =
+    openFilterCriterionId !== null &&
+    filteredCriteria.some((criterion) => criterion.id === openFilterCriterionId)
+      ? openFilterCriterionId
+      : null;
+  const criteriaById = useMemo(() => {
+    const entries = groupsWithCriteria.flatMap((group) => group.criteria);
+    return new Map(entries.map((criterion) => [criterion.id, criterion]));
+  }, [groupsWithCriteria]);
   const togglesActive = showOnlyDifferences || hideUnverified;
   const showEmptyState =
     filteredCriteria.length === 0 && (isQuerying || togglesActive);
+  const columnFiltersActive = columnFilters.length > 0;
+  const showRowEmptyState =
+    visibleAlternatives.length === 0 && columnFiltersActive && !focusedEmpty;
   const updateScrollSpacerWidth = useCallback(() => {
     const width = tableRef.current?.scrollWidth ?? 0;
     setScrollSpacerWidth((previous) => (previous === width ? previous : width));
@@ -419,6 +469,14 @@ export default function CategoryMatrixView({
         onFocusedOnlyChange={setFocusedOnly}
         onClearPins={clearPins}
       />
+      <MatrixColumnFilterChips
+        filters={columnFilters}
+        criteriaById={criteriaById}
+        resultCount={matrixFilteredAlternatives.length}
+        onClearFilter={clearColumnFilter}
+        onClearAll={clearColumnFilters}
+        t={t}
+      />
       {focusedEmpty ? (
         <div
           className="category-matrix-focused-empty"
@@ -474,6 +532,26 @@ export default function CategoryMatrixView({
               {t("matrixView.toolbar.clearSearch")}
             </button>
           )}
+        </div>
+      ) : showRowEmptyState ? (
+        <div
+          className="category-matrix-row-empty"
+          role="status"
+          data-testid="category-matrix-row-empty"
+        >
+          <h3 className="category-matrix-row-empty-title">
+            {t("matrixView.columnFilters.emptyTitle")}
+          </h3>
+          <p className="category-matrix-row-empty-body">
+            {t("matrixView.columnFilters.emptyBody")}
+          </p>
+          <button
+            type="button"
+            className="category-matrix-row-empty-reset"
+            onClick={clearColumnFilters}
+          >
+            {t("matrixView.columnFilters.clearAll")}
+          </button>
         </div>
       ) : (
         <>
@@ -541,11 +619,23 @@ export default function CategoryMatrixView({
                     ))}
                   </tr>
                   <tr className="category-matrix-view-criterion-row">
-                    {filteredCriteria.map((criterion) => (
+                    {filteredCriteria.map((criterion) => {
+                      const activeFilter = findMatrixColumnFilter(
+                        columnFilters,
+                        criterion.id,
+                      );
+                      const isFilterOpen =
+                        visibleOpenFilterCriterionId === criterion.id;
+
+                      return (
                       <th
                         key={criterion.id}
                         scope="col"
-                        className="category-matrix-view-criterion-header"
+                        className={
+                          isFilterOpen
+                            ? "category-matrix-view-criterion-header is-filter-open"
+                            : "category-matrix-view-criterion-header"
+                        }
                         aria-sort={
                           criterion.id === "trust_score"
                             ? sortAriaValue(sortState, "trust_score")
@@ -553,31 +643,69 @@ export default function CategoryMatrixView({
                         }
                       >
                         {criterion.id === "trust_score" ? (
-                          <button
-                            type="button"
-                            className="category-matrix-sort-button"
-                            onClick={() => toggleSort("trust_score")}
-                            aria-label={matrixSortLabel(
-                              t,
-                              "trust_score",
-                              sortState,
-                            )}
-                          >
-                            <span>{criterion.label}</span>
-                            {renderSortIcon(sortState, "trust_score")}
-                          </button>
-                        ) : (
-                          <span className="category-matrix-view-criterion-label">
-                            {criterion.label}
+                          <span className="category-matrix-view-criterion-actions">
+                            <button
+                              type="button"
+                              className="category-matrix-sort-button"
+                              onClick={() => toggleSort("trust_score")}
+                              aria-label={matrixSortLabel(
+                                t,
+                                "trust_score",
+                                sortState,
+                              )}
+                            >
+                              <span>{criterion.label}</span>
+                              {renderSortIcon(sortState, "trust_score")}
+                            </button>
+                            <MatrixColumnFilterTrigger
+                              criterion={criterion}
+                              activeFilter={activeFilter}
+                              isOpen={isFilterOpen}
+                              onToggle={() =>
+                                toggleColumnFilterPopover(criterion.id)
+                              }
+                              t={t}
+                              variant="icon"
+                              surface="desktop"
+                            />
                           </span>
+                        ) : (
+                          <MatrixColumnFilterTrigger
+                            criterion={criterion}
+                            activeFilter={activeFilter}
+                            isOpen={isFilterOpen}
+                            onToggle={() =>
+                              toggleColumnFilterPopover(criterion.id)
+                            }
+                            t={t}
+                            variant="label"
+                            surface="desktop"
+                          />
                         )}
                         {criterion.helpText !== null && (
                           <span className="category-matrix-view-criterion-help">
                             {criterion.helpText}
                           </span>
                         )}
+                        {isFilterOpen && (
+                          <MatrixColumnFilterPopover
+                            id={matrixColumnFilterPopoverId(
+                              criterion.id,
+                              "desktop",
+                            )}
+                            criterion={criterion}
+                            alternatives={browseFilteredAlternatives}
+                            filters={columnFilters}
+                            activeFilter={activeFilter}
+                            onApplyFilter={applyColumnFilter}
+                            onClearFilter={() => clearColumnFilter(criterion.id)}
+                            onClose={() => setOpenFilterCriterionId(null)}
+                            t={t}
+                          />
+                        )}
                       </th>
-                    ))}
+                      );
+                    })}
                   </tr>
                 </thead>
                 <tbody>
@@ -666,6 +794,13 @@ export default function CategoryMatrixView({
             alternatives={orderedAlternatives}
             pinnedAlternatives={pinnedAlternatives}
             onAlternativeOpen={onAlternativeOpen}
+            baseAlternativesForFilterCounts={browseFilteredAlternatives}
+            columnFilters={columnFilters}
+            openFilterCriterionId={visibleOpenFilterCriterionId}
+            onToggleFilterPopover={toggleColumnFilterPopover}
+            onApplyColumnFilter={applyColumnFilter}
+            onClearColumnFilter={clearColumnFilter}
+            onCloseColumnFilter={() => setOpenFilterCriterionId(null)}
             t={t}
             language={i18n.language}
           />
@@ -718,11 +853,784 @@ function renderSortIcon(
   );
 }
 
+type MatrixColumnFilterSurface = "desktop" | "mobile";
+type MatrixColumnFilterTriggerVariant = "label" | "icon";
+type MatrixColumnFilterTone =
+  | MatrixDisplayTone
+  | MatrixBooleanTone
+  | "unverified"
+  | "not-applicable";
+
+interface MatrixColumnFilterTriggerProps {
+  criterion: MatrixCriterion;
+  activeFilter: MatrixColumnFilter | undefined;
+  isOpen: boolean;
+  onToggle: () => void;
+  t: TranslateFn;
+  variant: MatrixColumnFilterTriggerVariant;
+  surface: MatrixColumnFilterSurface;
+}
+
+function MatrixColumnFilterTrigger({
+  criterion,
+  activeFilter,
+  isOpen,
+  onToggle,
+  t,
+  variant,
+  surface,
+}: MatrixColumnFilterTriggerProps) {
+  const isActive = activeFilter !== undefined;
+  const className = [
+    variant === "icon"
+      ? "category-matrix-column-filter-icon-button"
+      : "category-matrix-column-filter-trigger",
+    isActive ? "is-active" : "",
+    isOpen ? "is-open" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <button
+      type="button"
+      className={className}
+      onClick={onToggle}
+      aria-expanded={isOpen ? "true" : "false"}
+      aria-controls={
+        isOpen ? matrixColumnFilterPopoverId(criterion.id, surface) : undefined
+      }
+      aria-label={t("matrixView.columnFilters.openLabel", {
+        criterion: criterion.label,
+      })}
+      title={t("matrixView.columnFilters.openLabel", {
+        criterion: criterion.label,
+      })}
+    >
+      {variant === "label" && (
+        <span className="category-matrix-view-criterion-label">
+          {criterion.label}
+        </span>
+      )}
+      {renderColumnFilterIcon(isActive)}
+    </button>
+  );
+}
+
+function renderColumnFilterIcon(isActive: boolean): ReactNode {
+  return (
+    <svg
+      className="category-matrix-column-filter-icon"
+      viewBox="0 0 24 24"
+      fill={isActive ? "currentColor" : "none"}
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 5h16l-6 7v5l-4 2v-7L4 5z" />
+    </svg>
+  );
+}
+
+function renderSmallCloseIcon(): ReactNode {
+  return (
+    <svg
+      className="category-matrix-column-filter-close-icon"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M18.3 5.71 12 12l6.3 6.29-1.41 1.41L10.59 13.41 4.29 19.7 2.88 18.29 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.3-6.29z" />
+    </svg>
+  );
+}
+
+interface MatrixColumnFilterChipsProps {
+  filters: MatrixColumnFilter[];
+  criteriaById: ReadonlyMap<string, MatrixCriterion>;
+  resultCount: number;
+  onClearFilter: (criterionId: string) => void;
+  onClearAll: () => void;
+  t: TranslateFn;
+}
+
+function MatrixColumnFilterChips({
+  filters,
+  criteriaById,
+  resultCount,
+  onClearFilter,
+  onClearAll,
+  t,
+}: MatrixColumnFilterChipsProps) {
+  if (filters.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      className="category-matrix-column-filter-chips"
+      role="list"
+      aria-label={t("matrixView.columnFilters.activeLabel")}
+    >
+      <span className="category-matrix-column-filter-chips-label">
+        {t("matrixView.columnFilters.activeLabel")}
+      </span>
+      {filters.map((filter) => {
+        const criterion = criteriaById.get(filter.criterionId);
+        const label = matrixColumnFilterSummary(filter, criterion, t);
+        return (
+          <span key={filter.criterionId} role="listitem">
+            <button
+              type="button"
+              className="category-matrix-column-filter-chip"
+              onClick={() => onClearFilter(filter.criterionId)}
+              aria-label={t("matrixView.columnFilters.removeLabel", { label })}
+            >
+              <span>{label}</span>
+              {renderSmallCloseIcon()}
+            </button>
+          </span>
+        );
+      })}
+      <span className="category-matrix-column-filter-result-count">
+        {t("matrixView.columnFilters.resultCount", { count: resultCount })}
+      </span>
+      <button
+        type="button"
+        className="category-matrix-column-filter-clear-all"
+        onClick={onClearAll}
+      >
+        {t("matrixView.columnFilters.clearAll")}
+      </button>
+    </div>
+  );
+}
+
+interface MatrixColumnFilterPopoverProps {
+  id: string;
+  criterion: MatrixCriterion;
+  alternatives: CategoryMatrixApiResponse["data"]["alternatives"];
+  filters: MatrixColumnFilter[];
+  activeFilter: MatrixColumnFilter | undefined;
+  onApplyFilter: (filter: MatrixColumnFilter) => void;
+  onClearFilter: () => void;
+  onClose: () => void;
+  t: TranslateFn;
+}
+
+function MatrixColumnFilterPopover({
+  id,
+  criterion,
+  alternatives,
+  filters,
+  activeFilter,
+  onApplyFilter,
+  onClearFilter,
+  onClose,
+  t,
+}: MatrixColumnFilterPopoverProps) {
+  const alternativesForCounts = applyMatrixColumnFilters(
+    alternatives,
+    withoutMatrixColumnFilter(filters, criterion.id),
+  );
+  const hasValueFilters = hasMatrixColumnValueFilters(criterion);
+
+  return (
+    <div
+      id={id}
+      className="category-matrix-column-filter-popover"
+      role="dialog"
+      aria-label={t("matrixView.columnFilters.title", {
+        criterion: criterion.label,
+      })}
+    >
+      <div className="category-matrix-column-filter-popover-header">
+        <span className="category-matrix-column-filter-popover-title">
+          {criterion.label}
+        </span>
+        <button
+          type="button"
+          className="category-matrix-column-filter-popover-close"
+          onClick={onClose}
+          aria-label={t("matrixView.columnFilters.close")}
+        >
+          {renderSmallCloseIcon()}
+        </button>
+      </div>
+      {hasValueFilters ? (
+        <div className="category-matrix-column-filter-section">
+          <span className="category-matrix-column-filter-section-title">
+            {t("matrixView.columnFilters.valuesTitle")}
+          </span>
+          {renderMatrixColumnValueFilterControls({
+            criterion,
+            alternativesForCounts,
+            activeFilter,
+            onApplyFilter,
+            onClearFilter,
+            t,
+          })}
+        </div>
+      ) : null}
+      {isValueColumnFilter(activeFilter) && (
+        <label className="category-matrix-column-filter-toggle">
+          <input
+            type="checkbox"
+            checked={activeFilter.includeUnverified}
+            onChange={(event) =>
+              onApplyFilter({
+                ...activeFilter,
+                includeUnverified: event.currentTarget.checked,
+              })
+            }
+          />
+          <span>{t("matrixView.columnFilters.includeUnverified")}</span>
+        </label>
+      )}
+      {activeFilter?.kind === "multi_enum" && activeFilter.values.length > 1 && (
+        <div className="category-matrix-column-filter-match-mode">
+          <button
+            type="button"
+            className={
+              activeFilter.matchMode === "all"
+                ? "category-matrix-column-filter-mode is-active"
+                : "category-matrix-column-filter-mode"
+            }
+            onClick={() =>
+              onApplyFilter({ ...activeFilter, matchMode: "all" })
+            }
+          >
+            {t("matrixView.columnFilters.matchAll")}
+          </button>
+          <button
+            type="button"
+            className={
+              activeFilter.matchMode === "any"
+                ? "category-matrix-column-filter-mode is-active"
+                : "category-matrix-column-filter-mode"
+            }
+            onClick={() =>
+              onApplyFilter({ ...activeFilter, matchMode: "any" })
+            }
+          >
+            {t("matrixView.columnFilters.matchAny")}
+          </button>
+        </div>
+      )}
+      <div className="category-matrix-column-filter-section">
+        <span className="category-matrix-column-filter-section-title">
+          {t("matrixView.columnFilters.statusTitle")}
+        </span>
+        <div className="category-matrix-column-filter-options">
+          {MATRIX_COLUMN_FILTER_STATUSES.map((status) =>
+            renderMatrixColumnStatusFilterControl({
+              status,
+              criterion,
+              alternativesForCounts,
+              activeFilter,
+              onApplyFilter,
+              onClearFilter,
+              t,
+            }),
+          )}
+        </div>
+      </div>
+      <div className="category-matrix-column-filter-popover-footer">
+        <button
+          type="button"
+          className="category-matrix-column-filter-clear"
+          onClick={onClearFilter}
+          disabled={activeFilter === undefined}
+        >
+          {t("matrixView.columnFilters.clear")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const MATRIX_COLUMN_FILTER_STATUSES: MatrixColumnFilterStatus[] = [
+  "verified",
+  "unverified",
+  "not_applicable",
+];
+
+interface MatrixColumnValueFilterControlProps {
+  criterion: MatrixCriterion;
+  alternativesForCounts: CategoryMatrixApiResponse["data"]["alternatives"];
+  activeFilter: MatrixColumnFilter | undefined;
+  onApplyFilter: (filter: MatrixColumnFilter) => void;
+  onClearFilter: () => void;
+  t: TranslateFn;
+}
+
+function renderMatrixColumnValueFilterControls({
+  criterion,
+  alternativesForCounts,
+  activeFilter,
+  onApplyFilter,
+  onClearFilter,
+  t,
+}: MatrixColumnValueFilterControlProps): ReactNode {
+  if (criterion.valueType === "boolean") {
+    const choices = [true, false]
+      .map((value) => ({
+        value,
+        label: t(value ? "matrixView.yes" : "matrixView.no"),
+        tone: booleanVerdictTone(value, criterion.semantics),
+      }))
+      .sort((left, right) => compareColumnFilterChoices(left, right));
+
+    return (
+      <div className="category-matrix-column-filter-options">
+        {choices.map((choice) => {
+          const filter: MatrixColumnFilter = {
+            criterionId: criterion.id,
+            kind: "boolean",
+            value: choice.value,
+            includeUnverified: false,
+          };
+          const isActive =
+            activeFilter?.kind === "boolean" &&
+            activeFilter.value === choice.value;
+          return renderMatrixColumnFilterOptionButton({
+            key: choice.value ? "true" : "false",
+            label: choice.label,
+            tone: choice.tone,
+            count: countMatchingColumnFilter(alternativesForCounts, filter),
+            isActive,
+            onClick: () => (isActive ? onClearFilter() : onApplyFilter(filter)),
+          });
+        })}
+      </div>
+    );
+  }
+
+  if (criterion.valueType === "enum") {
+    const options = matrixColumnCriterionOptions(
+      criterion,
+      alternativesForCounts,
+    );
+
+    if (options.length === 0) {
+      return (
+        <span className="category-matrix-column-filter-empty">
+          {t("matrixView.columnFilters.noValues")}
+        </span>
+      );
+    }
+
+    return (
+      <div className="category-matrix-column-filter-options">
+        {options.map((option) => {
+          const filter: MatrixColumnFilter = {
+            criterionId: criterion.id,
+            kind: "enum",
+            values: [option.id],
+            includeUnverified: false,
+          };
+          const isActive =
+            activeFilter?.kind === "enum" &&
+            activeFilter.values.length === 1 &&
+            activeFilter.values[0] === option.id;
+          return renderMatrixColumnFilterOptionButton({
+            key: option.id,
+            label: option.label,
+            tone: option.tone,
+            count: countMatchingColumnFilter(alternativesForCounts, filter),
+            isActive,
+            onClick: () => (isActive ? onClearFilter() : onApplyFilter(filter)),
+          });
+        })}
+      </div>
+    );
+  }
+
+  if (criterion.valueType === "multi_enum") {
+    const options = matrixColumnCriterionOptions(
+      criterion,
+      alternativesForCounts,
+    );
+
+    if (options.length === 0) {
+      return (
+        <span className="category-matrix-column-filter-empty">
+          {t("matrixView.columnFilters.noValues")}
+        </span>
+      );
+    }
+
+    return (
+      <div className="category-matrix-column-filter-options">
+        {options.map((option) => {
+          const activeValues =
+            activeFilter?.kind === "multi_enum" ? activeFilter.values : [];
+          const isActive = activeValues.includes(option.id);
+          const filter: MatrixColumnFilter = {
+            criterionId: criterion.id,
+            kind: "multi_enum",
+            values: [option.id],
+            matchMode: "all",
+            includeUnverified: false,
+          };
+          return renderMatrixColumnFilterOptionButton({
+            key: option.id,
+            label: option.label,
+            tone: option.tone,
+            count: countMatchingColumnFilter(alternativesForCounts, filter),
+            isActive,
+            onClick: () => {
+              const nextValues = orderedMatrixColumnValues(
+                options.map((entry) => entry.id),
+                isActive
+                  ? activeValues.filter((value) => value !== option.id)
+                  : [...activeValues, option.id],
+              );
+
+              if (nextValues.length === 0) {
+                onClearFilter();
+                return;
+              }
+
+              onApplyFilter({
+                criterionId: criterion.id,
+                kind: "multi_enum",
+                values: nextValues,
+                matchMode:
+                  activeFilter?.kind === "multi_enum"
+                    ? activeFilter.matchMode
+                    : "all",
+                includeUnverified:
+                  activeFilter?.kind === "multi_enum"
+                    ? activeFilter.includeUnverified
+                    : false,
+              });
+            },
+          });
+        })}
+      </div>
+    );
+  }
+
+  return null;
+}
+
+interface MatrixColumnFilterOptionButtonProps {
+  key: string;
+  label: string;
+  tone: MatrixColumnFilterTone;
+  count: number;
+  isActive: boolean;
+  onClick: () => void;
+}
+
+function renderMatrixColumnFilterOptionButton({
+  key,
+  label,
+  tone,
+  count,
+  isActive,
+  onClick,
+}: MatrixColumnFilterOptionButtonProps): ReactNode {
+  return (
+    <button
+      key={key}
+      type="button"
+      className={
+        isActive
+          ? `category-matrix-column-filter-option category-matrix-column-filter-option--${tone} is-active`
+          : `category-matrix-column-filter-option category-matrix-column-filter-option--${tone}`
+      }
+      onClick={onClick}
+      aria-pressed={isActive ? "true" : "false"}
+    >
+      <span className="category-matrix-column-filter-option-label">
+        {label}
+      </span>
+      <span className="category-matrix-column-filter-option-count">
+        {count}
+      </span>
+    </button>
+  );
+}
+
+interface MatrixColumnStatusFilterControlProps {
+  status: MatrixColumnFilterStatus;
+  criterion: MatrixCriterion;
+  alternativesForCounts: CategoryMatrixApiResponse["data"]["alternatives"];
+  activeFilter: MatrixColumnFilter | undefined;
+  onApplyFilter: (filter: MatrixColumnFilter) => void;
+  onClearFilter: () => void;
+  t: TranslateFn;
+}
+
+function renderMatrixColumnStatusFilterControl({
+  status,
+  criterion,
+  alternativesForCounts,
+  activeFilter,
+  onApplyFilter,
+  onClearFilter,
+  t,
+}: MatrixColumnStatusFilterControlProps): ReactNode {
+  const filter: MatrixColumnFilter = {
+    criterionId: criterion.id,
+    kind: "status",
+    status,
+  };
+  const isActive =
+    activeFilter?.kind === "status" && activeFilter.status === status;
+
+  return renderMatrixColumnFilterOptionButton({
+    key: status,
+    label: matrixColumnFilterStatusLabel(status, t),
+    tone: matrixColumnFilterStatusTone(status),
+    count: countMatchingColumnFilter(alternativesForCounts, filter),
+    isActive,
+    onClick: () => (isActive ? onClearFilter() : onApplyFilter(filter)),
+  });
+}
+
+interface MatrixColumnCriterionOption {
+  id: string;
+  label: string;
+  tone: MatrixDisplayTone;
+}
+
+function matrixColumnCriterionOptions(
+  criterion: MatrixCriterion,
+  alternatives: CategoryMatrixApiResponse["data"]["alternatives"],
+): MatrixColumnCriterionOption[] {
+  const optionIds = new Set<string>();
+  for (const option of criterion.options) {
+    optionIds.add(option.id);
+  }
+
+  for (const alternative of alternatives) {
+    const fact = alternative.facts[criterion.id] ?? UNVERIFIED_FACT;
+    if (fact.status !== "verified" || fact.value === null) {
+      continue;
+    }
+    if (criterion.valueType === "enum" && typeof fact.value === "string") {
+      optionIds.add(fact.value);
+    }
+    if (criterion.valueType === "multi_enum" && Array.isArray(fact.value)) {
+      for (const value of fact.value) {
+        optionIds.add(value);
+      }
+    }
+  }
+
+  return [...optionIds]
+    .map((optionId) => {
+      const option = criterion.options.find((entry) => entry.id === optionId);
+      return {
+        id: optionId,
+        label: option?.label ?? optionId,
+        tone: option?.displayTone ?? "neutral",
+      };
+    })
+    .sort(compareColumnFilterChoices);
+}
+
+function compareColumnFilterChoices(
+  left: { label: string; tone: MatrixColumnFilterTone },
+  right: { label: string; tone: MatrixColumnFilterTone },
+): number {
+  const toneComparison =
+    matrixColumnFilterTonePriority(left.tone) -
+    matrixColumnFilterTonePriority(right.tone);
+
+  return toneComparison === 0
+    ? left.label.localeCompare(right.label)
+    : toneComparison;
+}
+
+function matrixColumnFilterTonePriority(tone: MatrixColumnFilterTone): number {
+  switch (tone) {
+    case "positive":
+      return 0;
+    case "warning":
+    case "tradeoff":
+      return 1;
+    case "neutral":
+      return 2;
+    case "unverified":
+      return 3;
+    case "not-applicable":
+      return 4;
+    case "negative":
+    default:
+      return 5;
+  }
+}
+
+function matrixColumnFilterStatusTone(
+  status: MatrixColumnFilterStatus,
+): MatrixColumnFilterTone {
+  switch (status) {
+    case "verified":
+      return "positive";
+    case "unverified":
+      return "unverified";
+    case "not_applicable":
+      return "not-applicable";
+  }
+}
+
+function countMatchingColumnFilter(
+  alternatives: CategoryMatrixApiResponse["data"]["alternatives"],
+  filter: MatrixColumnFilter,
+): number {
+  return alternatives.filter((alternative) =>
+    matrixFactMatchesColumnFilter(
+      alternative.facts[filter.criterionId] ?? UNVERIFIED_FACT,
+      filter,
+    ),
+  ).length;
+}
+
+function orderedMatrixColumnValues(
+  order: string[],
+  selectedValues: string[],
+): string[] {
+  const selected = new Set(selectedValues);
+  return order.filter((value) => selected.has(value));
+}
+
+function hasMatrixColumnValueFilters(criterion: MatrixCriterion): boolean {
+  return (
+    criterion.valueType === "boolean" ||
+    criterion.valueType === "enum" ||
+    criterion.valueType === "multi_enum"
+  );
+}
+
+function isValueColumnFilter(
+  filter: MatrixColumnFilter | undefined,
+): filter is Extract<
+  MatrixColumnFilter,
+  { kind: "boolean" | "enum" | "multi_enum" }
+> {
+  return (
+    filter?.kind === "boolean" ||
+    filter?.kind === "enum" ||
+    filter?.kind === "multi_enum"
+  );
+}
+
+function findMatrixColumnFilter(
+  filters: readonly MatrixColumnFilter[],
+  criterionId: string,
+): MatrixColumnFilter | undefined {
+  return filters.find((filter) => filter.criterionId === criterionId);
+}
+
+function matrixColumnFilterSummary(
+  filter: MatrixColumnFilter,
+  criterion: MatrixCriterion | undefined,
+  t: TranslateFn,
+): string {
+  const criterionLabel = criterion?.label ?? filter.criterionId;
+  const valueLabel = matrixColumnFilterValueSummary(filter, criterion, t);
+  return `${criterionLabel}: ${valueLabel}`;
+}
+
+function matrixColumnFilterValueSummary(
+  filter: MatrixColumnFilter,
+  criterion: MatrixCriterion | undefined,
+  t: TranslateFn,
+): string {
+  if (filter.kind === "boolean") {
+    return appendIncludeUnverifiedLabel(
+      filter.value ? t("matrixView.yes") : t("matrixView.no"),
+      filter.includeUnverified,
+      t,
+    );
+  }
+
+  if (filter.kind === "status") {
+    return matrixColumnFilterStatusLabel(filter.status, t);
+  }
+
+  const labels = filter.values.map((value) =>
+    matrixColumnCriterionValueLabel(criterion, value),
+  );
+  const baseLabel = labels.join(", ");
+  const modeLabel =
+    filter.kind === "multi_enum" && filter.values.length > 1
+      ? ` (${t(
+          filter.matchMode === "all"
+            ? "matrixView.columnFilters.matchAllShort"
+            : "matrixView.columnFilters.matchAnyShort",
+        )})`
+      : "";
+
+  return appendIncludeUnverifiedLabel(
+    `${baseLabel}${modeLabel}`,
+    filter.includeUnverified,
+    t,
+  );
+}
+
+function appendIncludeUnverifiedLabel(
+  label: string,
+  includeUnverified: boolean,
+  t: TranslateFn,
+): string {
+  return includeUnverified
+    ? `${label} + ${t("matrixView.columnFilters.unverified")}`
+    : label;
+}
+
+function matrixColumnCriterionValueLabel(
+  criterion: MatrixCriterion | undefined,
+  value: string,
+): string {
+  return criterion?.options.find((option) => option.id === value)?.label ?? value;
+}
+
+function matrixColumnFilterStatusLabel(
+  status: MatrixColumnFilterStatus,
+  t: TranslateFn,
+): string {
+  switch (status) {
+    case "verified":
+      return t("matrixView.columnFilters.verified");
+    case "unverified":
+      return t("matrixView.columnFilters.unverified");
+    case "not_applicable":
+      return t("matrixView.columnFilters.notApplicable");
+  }
+}
+
+function matrixColumnFilterPopoverId(
+  criterionId: string,
+  surface: MatrixColumnFilterSurface,
+): string {
+  return `category-matrix-column-filter-${matrixDomIdSegment(
+    criterionId,
+  )}-${surface}`;
+}
+
+function matrixDomIdSegment(value: string): string {
+  return value.replace(/[^a-zA-Z0-9_-]+/gu, "-");
+}
+
 interface MobileMatrixInspectorProps {
   groups: CategoryMatrixApiResponse["data"]["groups"];
   alternatives: CategoryMatrixApiResponse["data"]["alternatives"];
   pinnedAlternatives?: CategoryMatrixApiResponse["data"]["alternatives"];
   onAlternativeOpen?: (alternativeId: string) => void;
+  baseAlternativesForFilterCounts: CategoryMatrixApiResponse["data"]["alternatives"];
+  columnFilters: MatrixColumnFilter[];
+  openFilterCriterionId: string | null;
+  onToggleFilterPopover: (criterionId: string) => void;
+  onApplyColumnFilter: (filter: MatrixColumnFilter) => void;
+  onClearColumnFilter: (criterionId: string) => void;
+  onCloseColumnFilter: () => void;
   t: TranslateFn;
   language: string;
 }
@@ -751,6 +1659,13 @@ function MobileMatrixInspector({
   alternatives,
   pinnedAlternatives,
   onAlternativeOpen,
+  baseAlternativesForFilterCounts,
+  columnFilters,
+  openFilterCriterionId,
+  onToggleFilterPopover,
+  onApplyColumnFilter,
+  onClearColumnFilter,
+  onCloseColumnFilter,
   t,
   language,
 }: MobileMatrixInspectorProps) {
@@ -842,9 +1757,39 @@ function MobileMatrixInspector({
               key={criterion.id}
               className="category-matrix-mobile-inspector-row"
             >
-              <span className="category-matrix-mobile-inspector-criterion-label">
-                {criterion.label}
-              </span>
+              <div className="category-matrix-mobile-inspector-criterion-header">
+                <span className="category-matrix-mobile-inspector-criterion-label">
+                  {criterion.label}
+                </span>
+                <MatrixColumnFilterTrigger
+                  criterion={criterion}
+                  activeFilter={findMatrixColumnFilter(
+                    columnFilters,
+                    criterion.id,
+                  )}
+                  isOpen={openFilterCriterionId === criterion.id}
+                  onToggle={() => onToggleFilterPopover(criterion.id)}
+                  t={t}
+                  variant="icon"
+                  surface="mobile"
+                />
+                {openFilterCriterionId === criterion.id && (
+                  <MatrixColumnFilterPopover
+                    id={matrixColumnFilterPopoverId(criterion.id, "mobile")}
+                    criterion={criterion}
+                    alternatives={baseAlternativesForFilterCounts}
+                    filters={columnFilters}
+                    activeFilter={findMatrixColumnFilter(
+                      columnFilters,
+                      criterion.id,
+                    )}
+                    onApplyFilter={onApplyColumnFilter}
+                    onClearFilter={() => onClearColumnFilter(criterion.id)}
+                    onClose={onCloseColumnFilter}
+                    t={t}
+                  />
+                )}
+              </div>
               <div className="category-matrix-mobile-inspector-cells">
                 {focusedAlternatives.map((alternative) => (
                   <div
