@@ -6,6 +6,9 @@ import { describe, expect, it } from "vitest";
 const migrationPath = resolve(
   "scripts/migrations/056-category-benchmark-memberships.sql",
 );
+const signalMigrationPath = resolve(
+  "scripts/migrations/057-messaging-signal-membership.sql",
+);
 
 function readMigration(): string {
   expect(
@@ -14,6 +17,15 @@ function readMigration(): string {
   ).toBe(true);
 
   return readFileSync(migrationPath, "utf8");
+}
+
+function readSignalMigration(): string {
+  expect(
+    existsSync(signalMigrationPath),
+    "Expected migration 057 to add Signal as an explicit messaging member.",
+  ).toBe(true);
+
+  return readFileSync(signalMigrationPath, "utf8");
 }
 
 describe("category benchmark membership migration", () => {
@@ -44,6 +56,29 @@ describe("category benchmark membership migration", () => {
 
     expect(sql).toMatch(
       /INSERT\s+INTO\s+`?schema_migrations`?\s*\(\s*`?version`?\s*\)\s*VALUES\s*\(\s*'056-category-benchmark-memberships'\s*\)/i,
+    );
+  });
+});
+
+describe("messaging Signal membership migration", () => {
+  it("adds Signal as a regular Messaging matrix member", () => {
+    const sql = readSignalMigration();
+
+    expect(sql).toMatch(/INSERT\s+IGNORE\s+INTO\s+`?entry_categories`?/i);
+    expect(sql).toMatch(/ce\.`?slug`?\s*=\s*'signal'/i);
+    expect(sql).toMatch(/'messaging'/i);
+    expect(sql).toMatch(/ce\.`?status`?\s*=\s*'us'/i);
+    expect(sql).toMatch(/ce\.`?is_active`?\s*=\s*1/i);
+  });
+
+  it("initializes Signal's Messaging matrix facts and records the migration", () => {
+    const sql = readSignalMigration();
+
+    expect(sql).toMatch(/INSERT\s+IGNORE\s+INTO\s+`?matrix_facts`?/i);
+    expect(sql).toMatch(/JOIN\s+`?matrix_criteria`?\s+mc/i);
+    expect(sql).toMatch(/mc\.`?category_id`?\s*=\s*'messaging'/i);
+    expect(sql).toMatch(
+      /INSERT\s+INTO\s+`?schema_migrations`?\s*\(\s*`?version`?\s*\)\s*VALUES\s*\(\s*'057-messaging-signal-membership'\s*\)/i,
     );
   });
 });

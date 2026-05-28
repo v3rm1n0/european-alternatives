@@ -238,7 +238,7 @@ if (!is_string($locale) || !in_array($locale, $validLocales, true)) {
     ]);
 }
 
-$cacheParams = ['category' => $category, 'locale' => $locale, 'v' => 'matrix-membership-v1'];
+$cacheParams = ['category' => $category, 'locale' => $locale, 'v' => 'matrix-membership-v2'];
 serveCachedResponse('matrix', $cacheParams);
 
 try {
