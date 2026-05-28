@@ -2269,35 +2269,6 @@ button:disabled {
   accent-color: var(--accent-primary);
 }
 
-.category-matrix-column-filter-match-mode {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  overflow: hidden;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-}
-
-.category-matrix-column-filter-mode {
-  padding: 0.375rem var(--spacing-sm);
-  border: 0;
-  border-right: 1px solid var(--border-color);
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: var(--font-size-xs);
-  cursor: pointer;
-}
-
-.category-matrix-column-filter-mode:last-child {
-  border-right: 0;
-}
-
-.category-matrix-column-filter-mode.is-active {
-  background: var(--accent-primary-10);
-  color: var(--accent-primary);
-}
-
 .category-matrix-column-filter-clear {
   padding: 0.375rem var(--spacing-sm);
   border: 1px solid var(--border-color);

@@ -66,7 +66,7 @@ describe("matrix column filters", () => {
     expect(result.map((entry) => entry.id)).toEqual(["briar", "matrix"]);
   });
 
-  it("supports all/any matching for multi-value facts", () => {
+  it("matches any selected value for multi-value facts", () => {
     const rows = [
       row("desktop-plus-mobile", {
         supported_platforms: {
@@ -86,17 +86,11 @@ describe("matrix column filters", () => {
       criterionId: "supported_platforms",
       kind: "multi_enum",
       values: ["android", "linux"],
-      matchMode: "all",
       includeUnverified: false,
     };
 
     expect(
       applyMatrixColumnFilters(rows, [baseFilter]).map((entry) => entry.id),
-    ).toEqual(["desktop-plus-mobile"]);
-    expect(
-      applyMatrixColumnFilters(rows, [
-        { ...baseFilter, matchMode: "any" },
-      ]).map((entry) => entry.id),
     ).toEqual(["desktop-plus-mobile", "desktop-only"]);
   });
 

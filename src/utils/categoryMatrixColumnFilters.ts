@@ -22,7 +22,6 @@ export type MatrixColumnFilter =
       criterionId: string;
       kind: "multi_enum";
       values: string[];
-      matchMode: "all" | "any";
       includeUnverified: boolean;
     }
   | {
@@ -86,11 +85,7 @@ export function matrixFactMatchesColumnFilter(
   }
 
   const selected = new Set(fact.value);
-  if (filter.matchMode === "any") {
-    return filter.values.some((value) => selected.has(value));
-  }
-
-  return filter.values.every((value) => selected.has(value));
+  return filter.values.some((value) => selected.has(value));
 }
 
 export function withoutMatrixColumnFilter(

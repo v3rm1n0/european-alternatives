@@ -1089,36 +1089,6 @@ function MatrixColumnFilterPopover({
           <span>{t("matrixView.columnFilters.includeUnverified")}</span>
         </label>
       )}
-      {activeFilter?.kind === "multi_enum" && activeFilter.values.length > 1 && (
-        <div className="category-matrix-column-filter-match-mode">
-          <button
-            type="button"
-            className={
-              activeFilter.matchMode === "all"
-                ? "category-matrix-column-filter-mode is-active"
-                : "category-matrix-column-filter-mode"
-            }
-            onClick={() =>
-              onApplyFilter({ ...activeFilter, matchMode: "all" })
-            }
-          >
-            {t("matrixView.columnFilters.matchAll")}
-          </button>
-          <button
-            type="button"
-            className={
-              activeFilter.matchMode === "any"
-                ? "category-matrix-column-filter-mode is-active"
-                : "category-matrix-column-filter-mode"
-            }
-            onClick={() =>
-              onApplyFilter({ ...activeFilter, matchMode: "any" })
-            }
-          >
-            {t("matrixView.columnFilters.matchAny")}
-          </button>
-        </div>
-      )}
       <div className="category-matrix-column-filter-section">
         <span className="category-matrix-column-filter-section-title">
           {t("matrixView.columnFilters.statusTitle")}
@@ -1272,7 +1242,6 @@ function renderMatrixColumnValueFilterControls({
             criterionId: criterion.id,
             kind: "multi_enum",
             values: [option.id],
-            matchMode: "all",
             includeUnverified: false,
           };
           return renderMatrixColumnFilterOptionButton({
@@ -1298,10 +1267,6 @@ function renderMatrixColumnValueFilterControls({
                 criterionId: criterion.id,
                 kind: "multi_enum",
                 values: nextValues,
-                matchMode:
-                  activeFilter?.kind === "multi_enum"
-                    ? activeFilter.matchMode
-                    : "all",
                 includeUnverified:
                   activeFilter?.kind === "multi_enum"
                     ? activeFilter.includeUnverified
@@ -1558,18 +1523,9 @@ function matrixColumnFilterValueSummary(
   const labels = filter.values.map((value) =>
     matrixColumnCriterionValueLabel(criterion, value),
   );
-  const baseLabel = labels.join(", ");
-  const modeLabel =
-    filter.kind === "multi_enum" && filter.values.length > 1
-      ? ` (${t(
-          filter.matchMode === "all"
-            ? "matrixView.columnFilters.matchAllShort"
-            : "matrixView.columnFilters.matchAnyShort",
-        )})`
-      : "";
 
   return appendIncludeUnverifiedLabel(
-    `${baseLabel}${modeLabel}`,
+    labels.join(", "),
     filter.includeUnverified,
     t,
   );
