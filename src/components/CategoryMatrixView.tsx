@@ -1343,10 +1343,12 @@ function renderMatrixColumnStatusFilterControl({
   const filter: MatrixColumnFilter = {
     criterionId: criterion.id,
     kind: "status",
-    status,
+    statuses: [status],
   };
+  const activeStatuses =
+    activeFilter?.kind === "status" ? activeFilter.statuses : [];
   const isActive =
-    activeFilter?.kind === "status" && activeFilter.status === status;
+    activeFilter?.kind === "status" && activeStatuses.includes(status);
 
   return renderMatrixColumnFilterOptionButton({
     key: status,
@@ -1354,7 +1356,29 @@ function renderMatrixColumnStatusFilterControl({
     tone: matrixColumnFilterStatusTone(status),
     count: countMatchingColumnFilter(alternativesForCounts, filter),
     isActive,
-    onClick: () => (isActive ? onClearFilter() : onApplyFilter(filter)),
+    onClick: () => {
+      const selected = new Set(activeStatuses);
+      if (isActive) {
+        selected.delete(status);
+      } else {
+        selected.add(status);
+      }
+
+      const nextStatuses = MATRIX_COLUMN_FILTER_STATUSES.filter((entry) =>
+        selected.has(entry),
+      );
+
+      if (nextStatuses.length === 0) {
+        onClearFilter();
+        return;
+      }
+
+      onApplyFilter({
+        criterionId: criterion.id,
+        kind: "status",
+        statuses: nextStatuses,
+      });
+    },
   });
 }
 
@@ -1517,7 +1541,9 @@ function matrixColumnFilterValueSummary(
   }
 
   if (filter.kind === "status") {
-    return matrixColumnFilterStatusLabel(filter.status, t);
+    return filter.statuses
+      .map((status) => matrixColumnFilterStatusLabel(status, t))
+      .join(", ");
   }
 
   const labels = filter.values.map((value) =>

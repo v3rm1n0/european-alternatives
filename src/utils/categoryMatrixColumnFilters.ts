@@ -27,7 +27,7 @@ export type MatrixColumnFilter =
   | {
       criterionId: string;
       kind: "status";
-      status: MatrixColumnFilterStatus;
+      statuses: MatrixColumnFilterStatus[];
     };
 
 export const UNVERIFIED_MATRIX_FACT: MatrixFact = {
@@ -57,11 +57,11 @@ export function matrixFactMatchesColumnFilter(
   filter: MatrixColumnFilter,
 ): boolean {
   if (filter.kind === "status") {
-    if (filter.status === "verified") {
-      return fact.status === "verified" && fact.value !== null;
-    }
-
-    return fact.status === filter.status;
+    return filter.statuses.some((status) =>
+      status === "verified"
+        ? fact.status === "verified" && fact.value !== null
+        : fact.status === status,
+    );
   }
 
   if (fact.status === "unverified") {

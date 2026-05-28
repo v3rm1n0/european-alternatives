@@ -113,7 +113,7 @@ describe("matrix column filters", () => {
         {
           criterionId: "security_audit_year",
           kind: "status",
-          status: "verified",
+          statuses: ["verified"],
         },
       ]).map((entry) => entry.id),
     ).toEqual(["verified"]);
@@ -122,7 +122,7 @@ describe("matrix column filters", () => {
         {
           criterionId: "security_audit_year",
           kind: "status",
-          status: "unverified",
+          statuses: ["unverified"],
         },
       ]).map((entry) => entry.id),
     ).toEqual(["missing"]);
@@ -131,10 +131,35 @@ describe("matrix column filters", () => {
         {
           criterionId: "security_audit_year",
           kind: "status",
-          status: "not_applicable",
+          statuses: ["not_applicable"],
         },
       ]).map((entry) => entry.id),
     ).toEqual(["not-applicable"]);
+  });
+
+  it("matches any selected status for fact-status filters", () => {
+    const rows = [
+      row("verified", {
+        phone_number_required: { status: "verified", value: false },
+      }),
+      row("unverified", {
+        phone_number_required: { status: "unverified", value: null },
+      }),
+      row("not-applicable", {
+        phone_number_required: { status: "not_applicable", value: null },
+      }),
+      row("missing", {}),
+    ];
+
+    expect(
+      applyMatrixColumnFilters(rows, [
+        {
+          criterionId: "phone_number_required",
+          kind: "status",
+          statuses: ["verified", "unverified"],
+        },
+      ]).map((entry) => entry.id),
+    ).toEqual(["verified", "unverified", "missing"]);
   });
 
   it("keeps one active filter per criterion when upserting", () => {
