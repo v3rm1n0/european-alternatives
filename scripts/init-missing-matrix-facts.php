@@ -2,11 +2,11 @@
 declare(strict_types=1);
 
 /**
- * Initialize missing matrix_facts rows for active alternatives.
+ * Initialize missing matrix_facts rows for active matrix entries.
  *
  * Closes the gap between catalog state and `matrix_facts`. For every
- * (entry, criterion) pair where the entry is an active alternative mapped
- * to a matrix-enabled category and no fact row exists yet, inserts an
+ * (entry, criterion) pair where the entry is an active alternative or US
+ * benchmark mapped to a matrix-enabled category and no fact row exists, inserts an
  * 'open' fact so the research pipeline can pick it up.
  *
  * Idempotent: re-runs insert zero new rows. Existing facts (in any status)
@@ -205,7 +205,7 @@ function validateInitCategory(PDO $pdo, string $category): bool
  */
 function gatherInitGapCounts(PDO $pdo, ?string $category): array
 {
-    $where = "WHERE ce.`status` = 'alternative'\n  AND ce.`is_active` = 1\n  AND mf.`id` IS NULL";
+    $where = "WHERE ce.`status` IN ('alternative', 'us')\n  AND ce.`is_active` = 1\n  AND mf.`id` IS NULL";
     $params = [];
 
     if ($category !== null) {
@@ -245,7 +245,7 @@ SQL;
 
 function performInitInsert(PDO $pdo, ?string $category): int
 {
-    $where = "WHERE ce.`status` = 'alternative'\n  AND ce.`is_active` = 1";
+    $where = "WHERE ce.`status` IN ('alternative', 'us')\n  AND ce.`is_active` = 1";
     $params = [];
 
     if ($category !== null) {

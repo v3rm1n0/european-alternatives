@@ -383,7 +383,7 @@ WHERE mf.status = 'needs-deeper-research'
         mf.deeper_research_next_eligible_at IS NULL
         OR mf.deeper_research_next_eligible_at <= NOW()
       )
-  AND ce.status = 'alternative'
+  AND ce.status IN ('alternative', 'us')
   AND ce.is_active = 1{$targetSql}
 ORDER BY
   c.sort_order ASC,
@@ -423,7 +423,7 @@ WHERE (
           AND sa.created_at < (NOW() - INTERVAL :stale_days DAY)
         )
       )
-  AND ce.status = 'alternative'
+  AND ce.status IN ('alternative', 'us')
   AND ce.is_active = 1{$targetSql}
 ORDER BY
   CASE mf.status
@@ -459,7 +459,7 @@ JOIN `categories` c ON c.id = mf.category_id
 JOIN `matrix_criteria` mc ON mc.id = mf.criterion_id
                          AND mc.category_id = mf.category_id
 WHERE mf.status = 'open'
-  AND ce.status = 'alternative'
+  AND ce.status IN ('alternative', 'us')
   AND ce.is_active = 1{$targetSql}
 ORDER BY
   c.sort_order ASC,

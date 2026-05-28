@@ -570,6 +570,13 @@ function matrix_research_selector_test_rows_for_sql(
         }
 
         if (
+            preg_match("/ce\\.status\\s+in\\s*\\(\\s*'alternative'\\s*,\\s*'us'\\s*\\)/", $normalizedSql) === 1
+            && !in_array($entry['status'] ?? null, ['alternative', 'us'], true)
+        ) {
+            continue;
+        }
+
+        if (
             str_contains($normalizedSql, 'ce.is_active = 1')
             && (int) ($entry['is_active'] ?? 0) !== 1
         ) {
@@ -800,18 +807,18 @@ describe("matrix research selector contract", () => {
     }
   });
 
-  it("automatically selects one deterministic open fact for an active alternative and claims only that fact", async () => {
+  it("automatically selects one deterministic open fact for an active matrix entry and claims only that fact", async () => {
     const original = selectorScenario();
     const result = await runSelector([], original);
 
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe("");
     expect(result.payload).toMatchObject({
-      factId: 105,
+      factId: 102,
       categoryId: "email",
       categoryName: "Email",
-      entrySlug: "alpha-mail",
-      entryName: "Alpha Mail",
+      entrySlug: "us-mail",
+      entryName: "A US Vendor",
       criterionKey: "ownership",
       criterionLabel: "Ownership",
       valueType: "text",
@@ -820,10 +827,10 @@ describe("matrix research selector contract", () => {
       dryRun: false,
     });
     expect(result.state.transactions).toEqual(["begin", "commit"]);
-    expect(result.state.updates).toEqual([{ affected: 1, factId: 105 }]);
+    expect(result.state.updates).toEqual([{ affected: 1, factId: 102 }]);
     expect(factStatusById(result.state)).toEqual({
       ...factStatusById(original),
-      "105": "researching",
+      "102": "researching",
     });
   });
 
@@ -1041,7 +1048,7 @@ describe("matrix research selector contract", () => {
 
   it("rolls back and reports failure when the selected open fact cannot be claimed", async () => {
     const scenario = selectorScenario();
-    scenario.forceZeroAffectedFactIds = [105];
+    scenario.forceZeroAffectedFactIds = [102];
     const result = await runSelector([], scenario);
 
     expect(result.exitCode).toBe(1);
@@ -1050,7 +1057,7 @@ describe("matrix research selector contract", () => {
       "Selected matrix fact could not be marked as researching.",
     );
     expect(result.state.transactions).toEqual(["begin", "rollback"]);
-    expect(result.state.updates).toEqual([{ affected: 0, factId: 105 }]);
+    expect(result.state.updates).toEqual([{ affected: 0, factId: 102 }]);
     expect(factStatusById(result.state)).toEqual(factStatusById(scenario));
   });
 

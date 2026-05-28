@@ -307,7 +307,14 @@ const matrixScenario: MatrixScenario = {
       logo_path: "/logos/us-chat.svg",
       open_source_level: "none",
       self_hostable: 0,
-      memberships: [],
+      memberships: [
+        {
+          entry_id: 506,
+          category_id: "messaging",
+          is_primary: 0,
+          sort_order: 1,
+        },
+      ],
     },
     {
       id: 507,
@@ -320,7 +327,34 @@ const matrixScenario: MatrixScenario = {
       logo_path: "/logos/signal.svg",
       open_source_level: "full",
       self_hostable: 0,
-      memberships: [],
+      memberships: [
+        {
+          entry_id: 507,
+          category_id: "messaging",
+          is_primary: 0,
+          sort_order: 2,
+        },
+      ],
+    },
+    {
+      id: 508,
+      slug: "jira",
+      name: "Jira",
+      status: "us",
+      is_active: 1,
+      country_code: "us",
+      website_url: "https://jira.example",
+      logo_path: "/logos/jira.svg",
+      open_source_level: "none",
+      self_hostable: 0,
+      memberships: [
+        {
+          entry_id: 508,
+          category_id: "project-management",
+          is_primary: 0,
+          sort_order: 1,
+        },
+      ],
     },
   ],
   categoryUsVendors: [
@@ -330,6 +364,12 @@ const matrixScenario: MatrixScenario = {
       raw_name: "US Chat",
       sort_order: 1,
     },
+    {
+      category_id: "project-management",
+      entry_id: 508,
+      raw_name: "Jira",
+      sort_order: 1,
+    },
   ],
   replacements: [
     {
@@ -337,6 +377,12 @@ const matrixScenario: MatrixScenario = {
       replaced_entry_id: 507,
       raw_name: "Signal",
       sort_order: 1,
+    },
+    {
+      entry_id: 501,
+      replaced_entry_id: 508,
+      raw_name: "Jira",
+      sort_order: 2,
     },
   ],
   tags: [
@@ -686,8 +732,6 @@ function matrix_catalog_test_selected_entry_ids(array $scenario, string $sql, st
 {
     $normalized = strtolower(preg_replace('/\\s+/', ' ', $sql) ?? $sql);
     $usesCategoryMembership = str_contains($normalized, 'entry_categories');
-    $usesCategoryUsVendors = str_contains($normalized, 'category_us_vendors');
-    $usesEntryReplacements = str_contains($normalized, 'entry_replacements');
     $filtersAlternativeStatus = preg_match("/\\bce\\.status\\s*=\\s*'alternative'/", $normalized) === 1;
     $filtersAlternativeOrUsStatus = preg_match("/status\\s+in\\s*\\(\\s*'alternative'\\s*,\\s*'us'\\s*\\)/", $normalized) === 1;
     $filtersActive = preg_match('/\\bis_active\\b\\s*=\\s*(?:1|true)/', $normalized) === 1;
@@ -707,27 +751,19 @@ function matrix_catalog_test_selected_entry_ids(array $scenario, string $sql, st
             continue;
         }
 
-        if (!$usesCategoryMembership && !$usesCategoryUsVendors) {
+        if (!$usesCategoryMembership) {
             $selected[] = (int)$entry['id'];
             continue;
         }
 
         $belongsToCategory = matrix_catalog_test_entry_belongs_to_category($entry, $categoryId);
-        $isCategoryUsVendor = $usesCategoryUsVendors
-            && ($entry['status'] ?? null) === 'us'
-            && matrix_catalog_test_entry_is_category_us_vendor($scenario, $entry, $categoryId);
-        $isReplacementUsVendor = $usesEntryReplacements
-            && ($entry['status'] ?? null) === 'us'
-            && matrix_catalog_test_entry_is_replaced_by_category_alternative($scenario, $entry, $categoryId);
 
-        if (!$belongsToCategory && !$isCategoryUsVendor && !$isReplacementUsVendor) {
+        if (!$belongsToCategory) {
             continue;
         }
 
         if (
             $filtersPrimaryMembership
-            && !$isCategoryUsVendor
-            && !$isReplacementUsVendor
             && !matrix_catalog_test_entry_primary_matches_category($entry, $categoryId)
         ) {
             continue;
@@ -1158,6 +1194,9 @@ describe("catalog matrix API endpoint", () => {
     expect(payload.data.alternatives.map((entry) => entry.id)).not.toContain(
       "draft-chat",
     );
+    expect(payload.data.alternatives.map((entry) => entry.id)).not.toContain(
+      "jira",
+    );
     expect(findAlternative(payload, "secondary-chat")).toMatchObject({
       category: "productivity",
       secondaryCategories: ["messaging"],
@@ -1166,13 +1205,13 @@ describe("catalog matrix API endpoint", () => {
       status: "us",
       country: "us",
       category: null,
-      secondaryCategories: [],
+      secondaryCategories: ["messaging"],
     });
     expect(findAlternative(payload, "signal")).toMatchObject({
       status: "us",
       country: "us",
       category: null,
-      secondaryCategories: [],
+      secondaryCategories: ["messaging"],
     });
   });
 

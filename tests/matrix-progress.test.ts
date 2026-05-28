@@ -293,7 +293,8 @@ function isoDaysFromNow(days: number): string {
 }
 
 /**
- * Two categories ("messaging", "browser") with two active alternatives each.
+ * Two categories ("messaging", "browser") with active alternatives and one
+ * active US benchmark entry.
  * Diverse statuses to exercise every bucket.
  */
 function baselineScenario(): Scenario {
@@ -360,7 +361,7 @@ function baselineScenario(): Scenario {
       { id: 200, category_id: "browser", criterion_key: "open-source" },
       { id: 201, category_id: "browser", criterion_key: "telemetry" },
     ],
-    // messaging: 2 active alternatives × 2 criteria = 4 universe rows
+    // messaging: 3 active matrix entries × 2 criteria = 6 universe rows
     // browser:   2 active alternatives × 2 criteria = 4 universe rows
     matrixFacts: [
       // messaging — entry 1: 1 verified-fresh, 1 verified-stale (counted as stale)
@@ -726,7 +727,7 @@ function mp_aggregate(array $state, string $rawSql, array $params): array
             foreach ($state['catalogEntries'] as $entry) {
                 if (
                     (int) $entry['id'] === (int) $ec['entry_id']
-                    && ($entry['status'] ?? null) === 'alternative'
+                    && in_array($entry['status'] ?? null, ['alternative', 'us'], true)
                     && (int) ($entry['is_active'] ?? 0) === 1
                 ) {
                     $entryIds[] = (int) $entry['id'];
@@ -977,9 +978,9 @@ describe("matrix-progress aggregate counts", () => {
 
     const messaging = payload.categories.messaging;
     expect(messaging).toBeDefined();
-    expect(messaging.expected).toBe(4); // 2 active alternatives × 2 criteria
-    expect(messaging.total).toBe(4); // all 4 facts seeded
-    expect(messaging.missing).toBe(0);
+    expect(messaging.expected).toBe(6); // 3 active matrix entries × 2 criteria
+    expect(messaging.total).toBe(4); // US benchmark facts are not seeded in the fixture
+    expect(messaging.missing).toBe(2);
     expect(messaging.verified).toBe(2);
     expect(messaging.open).toBe(1);
     expect(messaging.researching).toBe(0);
@@ -1014,13 +1015,13 @@ describe("matrix-progress aggregate counts", () => {
     expect(payload.totals.notApplicable).toBe(1);
   });
 
-  it("excludes inactive / non-alternative entries from expected and total", async () => {
+  it("includes active US benchmark entries and excludes inactive entries from expected and total", async () => {
     // Baseline has entry 5 (status='us') and entry 6 (is_active=0) — both
-    // assigned to messaging. They must not inflate expected or total.
+    // assigned to messaging. The US entry counts; the inactive one does not.
     const result = await runProgress(["--json"]);
     expect(result.exitCode).toBe(0);
     const messaging = result.payload!.categories.messaging;
-    expect(messaging.expected).toBe(4); // only entries 1 and 2 count
+    expect(messaging.expected).toBe(6); // entries 1, 2, and active US entry 5 count
     expect(messaging.total).toBe(4);
   });
 
@@ -1137,10 +1138,9 @@ describe("matrix-progress stale threshold override", () => {
 
 describe("matrix-progress top unresolved categories", () => {
   it("--json includes a top-unresolved list ordered by unresolved-count descending with alphabetical tiebreaker", async () => {
-    // Construct a scenario where two categories tie on unresolved counts.
-    // Baseline messaging: open=1, needs-deeper-research=1 → unresolved=2 (excluding stale-due to avoid double-count) + stale=1 (verified) → unresolved≥2.
+    // Baseline messaging: open=1, needs-deeper-research=1, stale=1 → unresolved=3.
     // Baseline browser:   researching=1, needs-deeper-research=1 → unresolved=2.
-    // Tie → alphabetical: "browser" < "messaging".
+    // Messaging therefore ranks before browser.
     const result = await runProgress(["--json"]);
     expect(result.exitCode).toBe(0);
     const top = result.payload!.topUnresolved;
@@ -1151,14 +1151,11 @@ describe("matrix-progress top unresolved categories", () => {
     for (let i = 1; i < top!.length; i++) {
       expect(top![i - 1].unresolved).toBeGreaterThanOrEqual(top![i].unresolved);
     }
-    // Alphabetical tiebreaker: when counts are equal, browser precedes messaging.
     const browserIdx = top!.findIndex((t) => t.categoryId === "browser");
     const messagingIdx = top!.findIndex((t) => t.categoryId === "messaging");
     expect(browserIdx).toBeGreaterThanOrEqual(0);
     expect(messagingIdx).toBeGreaterThanOrEqual(0);
-    if (top![browserIdx].unresolved === top![messagingIdx].unresolved) {
-      expect(browserIdx).toBeLessThan(messagingIdx);
-    }
+    expect(messagingIdx).toBeLessThan(browserIdx);
   });
 
   it("reports unresolved counts equal to open + needsDeeperResearch + staleDue per category", async () => {

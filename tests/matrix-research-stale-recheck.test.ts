@@ -493,7 +493,7 @@ function stale_select_rows(array $state, string $normalizedSql, array $params): 
         if ($entry === null || $category === null || $criterion === null) {
             continue;
         }
-        if ((string) ($entry['status'] ?? '') !== 'alternative') {
+        if (!in_array($entry['status'] ?? null, ['alternative', 'us'], true)) {
             continue;
         }
         if ((int) ($entry['is_active'] ?? 0) !== 1) {

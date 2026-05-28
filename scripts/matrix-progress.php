@@ -10,7 +10,7 @@ declare(strict_types=1);
  * surface is intentionally deferred until operator demand emerges.
  *
  * Per category, surfaces these counts:
- *   - expected            universe size (active alternatives x category criteria)
+ *   - expected            universe size (active alternatives/US benchmarks x category criteria)
  *   - total               rows already initialized in matrix_facts
  *   - missing             expected - total (gap rows init script would create)
  *   - verified            mf.status = 'verified'
@@ -306,7 +306,7 @@ JOIN `matrix_criteria` mc ON mc.`category_id` = c.`id`
 JOIN `entry_categories` ec ON ec.`category_id` = c.`id`
 JOIN `catalog_entries` ce
   ON ce.`id` = ec.`entry_id`
- AND ce.`status` = 'alternative'
+ AND ce.`status` IN ('alternative', 'us')
  AND ce.`is_active` = 1
 LEFT JOIN `matrix_facts` mf
   ON mf.`entry_id` = ce.`id`
@@ -463,7 +463,7 @@ function renderProgressText(array $payload): void
     echo "\n";
 
     if ($payload['categories'] === []) {
-        echo "No matrix-enabled categories with active alternatives found.\n";
+        echo "No matrix-enabled categories with active matrix entries found.\n";
         return;
     }
 

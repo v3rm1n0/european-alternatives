@@ -238,7 +238,7 @@ if (!is_string($locale) || !in_array($locale, $validLocales, true)) {
     ]);
 }
 
-$cacheParams = ['category' => $category, 'locale' => $locale, 'v' => 'trust-us-v2'];
+$cacheParams = ['category' => $category, 'locale' => $locale, 'v' => 'matrix-membership-v1'];
 serveCachedResponse('matrix', $cacheParams);
 
 try {
@@ -403,39 +403,16 @@ SELECT DISTINCT
     ce.open_source_level,
     ce.self_hostable
 FROM catalog_entries ce
-/* CATALOG_ENTRIES ENTRY_CATEGORIES CATEGORY_US_VENDORS ENTRY_REPLACEMENTS */
-LEFT JOIN entry_categories match_ec ON match_ec.entry_id = ce.id
-                                   AND match_ec.category_id = :category
-LEFT JOIN category_us_vendors cuv ON cuv.entry_id = ce.id
-                                 AND cuv.category_id = :category_for_us
-LEFT JOIN entry_replacements er_match ON er_match.replaced_entry_id = ce.id
-LEFT JOIN catalog_entries replacement_alt ON replacement_alt.id = er_match.entry_id
-                                         AND replacement_alt.status = 'alternative'
-                                         AND replacement_alt.is_active = 1
-LEFT JOIN entry_categories replacement_ec ON replacement_ec.entry_id = replacement_alt.id
-                                         AND replacement_ec.category_id = :category_for_replacements
+/* CATALOG_ENTRIES ENTRY_CATEGORIES */
+JOIN entry_categories match_ec ON match_ec.entry_id = ce.id
+                              AND match_ec.category_id = :category
 WHERE ce.status IN ('alternative', 'us')
   AND ce.is_active = 1
-  AND (
-        match_ec.entry_id IS NOT NULL
-        OR (
-          ce.status = 'us'
-          AND cuv.entry_id IS NOT NULL
-        )
-        OR (
-          ce.status = 'us'
-          AND replacement_ec.entry_id IS NOT NULL
-        )
-      )
 ORDER BY ce.name ASC, ce.id ASC
 SQL;
 
     $entriesStmt = $pdo->prepare($entriesSql);
-    $entriesStmt->execute([
-        'category' => $category,
-        'category_for_us' => $category,
-        'category_for_replacements' => $category,
-    ]);
+    $entriesStmt->execute(['category' => $category]);
     $entryRows = $entriesStmt->fetchAll();
     matrixSortRows($entryRows, ['name' => 'asc', 'id' => 'asc']);
 

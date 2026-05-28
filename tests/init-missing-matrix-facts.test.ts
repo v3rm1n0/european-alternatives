@@ -30,7 +30,7 @@ import { afterAll, describe, expect, it } from "vitest";
  *
  *   Rows seeded for each (entry_id, category_id, criterion_id) tuple
  *   where:
- *     - ce.status = 'alternative' AND ce.is_active = 1
+ *     - ce.status IN ('alternative', 'us') AND ce.is_active = 1
  *     - ec.entry_id = ce.id (the entry is mapped to category_id)
  *     - mc.category_id = ec.category_id (criterion lives in that category)
  *     - no existing matrix_facts row for (entry_id, criterion_id)
@@ -545,7 +545,7 @@ function init_facts_test_candidate_tuples(array $state, ?string $categoryFilter)
 {
     $tuples = [];
     foreach ($state['catalogEntries'] as $entry) {
-        if (($entry['status'] ?? null) !== 'alternative') {
+        if (!in_array($entry['status'] ?? null, ['alternative', 'us'], true)) {
             continue;
         }
         if ((int) ($entry['is_active'] ?? 0) !== 1) {
@@ -793,12 +793,24 @@ describe("init-missing-matrix-facts CLI contract", () => {
     expect(result.state.connections).toBeGreaterThan(0);
 
     // Baseline: entry 1 already has facts for both email criteria.
-    // Entries 3-5 are inactive/us/denied. Only gap = entry 2 / browser / criterion 20.
+    // Entries 3 and 5 are inactive/denied. Gaps are entry 2/browser and entry 4/email.
     expect(result.state.inserts).toEqual([
       {
         entry_id: 2,
         category_id: "browser",
         criterion_id: 20,
+        status: "open",
+      },
+      {
+        entry_id: 4,
+        category_id: "email",
+        criterion_id: 10,
+        status: "open",
+      },
+      {
+        entry_id: 4,
+        category_id: "email",
+        criterion_id: 11,
         status: "open",
       },
     ]);
@@ -820,9 +832,11 @@ describe("init-missing-matrix-facts seeding behavior", () => {
       expect.arrayContaining([
         { entry_id: 1, criterion_id: 10 },
         { entry_id: 1, criterion_id: 11 },
+        { entry_id: 4, criterion_id: 10 },
+        { entry_id: 4, criterion_id: 11 },
       ]),
     );
-    expect(grouped.email).toHaveLength(2);
+    expect(grouped.email).toHaveLength(4);
 
     expect(grouped.browser).toEqual([{ entry_id: 2, criterion_id: 20 }]);
 
@@ -857,6 +871,24 @@ describe("init-missing-matrix-facts seeding behavior", () => {
         entry_id: 2,
         category_id: "browser",
         criterion_id: 20,
+        status: "open",
+        value_text: null,
+        selected_attempt_id: null,
+      },
+      {
+        id: 203,
+        entry_id: 4,
+        category_id: "email",
+        criterion_id: 10,
+        status: "open",
+        value_text: null,
+        selected_attempt_id: null,
+      },
+      {
+        id: 204,
+        entry_id: 4,
+        category_id: "email",
+        criterion_id: 11,
         status: "open",
         value_text: null,
         selected_attempt_id: null,
@@ -910,6 +942,24 @@ describe("init-missing-matrix-facts seeding behavior", () => {
         status: "rejected",
         value_text: "rejected-text",
         selected_attempt_id: 777,
+      },
+      {
+        id: 303,
+        entry_id: 4,
+        category_id: "email",
+        criterion_id: 10,
+        status: "open",
+        value_text: null,
+        selected_attempt_id: null,
+      },
+      {
+        id: 304,
+        entry_id: 4,
+        category_id: "email",
+        criterion_id: 11,
+        status: "open",
+        value_text: null,
+        selected_attempt_id: null,
       },
     ];
 
@@ -987,7 +1037,7 @@ describe("init-missing-matrix-facts seeding behavior", () => {
     expect(grouped.browser).toEqual([{ entry_id: 7, criterion_id: 20 }]);
   });
 
-  it("does not create facts for inactive, us, or denied entries", async () => {
+  it("does not create facts for inactive or denied entries, but includes active US entries", async () => {
     const scenario = baselineScenario();
     scenario.matrixFacts = [];
 
@@ -1000,11 +1050,11 @@ describe("init-missing-matrix-facts seeding behavior", () => {
     );
 
     expect(insertedEntryIds.has(3)).toBe(false);
-    expect(insertedEntryIds.has(4)).toBe(false);
     expect(insertedEntryIds.has(5)).toBe(false);
 
     expect(insertedEntryIds.has(1)).toBe(true);
     expect(insertedEntryIds.has(2)).toBe(true);
+    expect(insertedEntryIds.has(4)).toBe(true);
   });
 });
 
@@ -1025,7 +1075,7 @@ describe("init-missing-matrix-facts --dry-run", () => {
     const payload = result.payload!;
     expect(payload.dryRun).toBe(true);
     expect(payload.inserted).toBe(0);
-    expect(payload.perCategory.email).toBe(2);
+    expect(payload.perCategory.email).toBe(4);
     expect(payload.perCategory.browser).toBe(1);
   });
 });
@@ -1141,8 +1191,8 @@ describe("init-missing-matrix-facts JSON payload and transaction lifecycle", () 
     expect(payload.dryRun).toBe(false);
     expect(payload.category).toBeNull();
     expect(payload.inserted).toBe(result.state.inserts.length);
-    expect(payload.inserted).toBe(3); // entry 1 × 2 email criteria + entry 2 × 1 browser criterion
-    expect(payload.perCategory.email).toBe(2);
+    expect(payload.inserted).toBe(5); // entries 1 and 4 × 2 email criteria + entry 2 × 1 browser criterion
+    expect(payload.perCategory.email).toBe(4);
     expect(payload.perCategory.browser).toBe(1);
   });
 
@@ -1193,7 +1243,7 @@ describe("init-missing-matrix-facts JSON payload and transaction lifecycle", () 
     expect(payload.dryRun).toBe(true);
     expect(payload.inserted).toBe(0);
     expect(payload.category).toBe("email");
-    expect(payload.perCategory.email).toBe(2);
+    expect(payload.perCategory.email).toBe(4);
     expect(payload.perCategory.browser).toBeUndefined();
   });
 });
