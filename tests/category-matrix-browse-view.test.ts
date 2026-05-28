@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import type { ComponentType, Dispatch, ReactNode, SetStateAction } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -1149,6 +1150,25 @@ describe("browse matrix view mode", () => {
     expect(html).toContain("category-matrix-view-scrollbar-spacer");
     expect(topScrollbarIndex).toBeLessThan(tableScrollIndex);
     expect(tableScrollIndex).toBeLessThan(tableIndex);
+  });
+
+  it("keeps column filter popovers usable when filtered tables are short", () => {
+    const componentSource = readFileSync(
+      new URL("../src/components/CategoryMatrixView.tsx", import.meta.url),
+      "utf8",
+    );
+    const css = readFileSync(
+      new URL("../src/index.css", import.meta.url),
+      "utf8",
+    );
+
+    expect(componentSource).toContain("is-filter-popover-open");
+    expect(css).toMatch(
+      /\.category-matrix-view-scroll\.is-filter-popover-open\s*\{[\s\S]*?padding-bottom:/u,
+    );
+    expect(css).toMatch(
+      /\.category-matrix-column-filter-popover\s*\{[\s\S]*?max-height:[\s\S]*?overflow-y:\s*auto/u,
+    );
   });
 
   it("renders the localized product corner-cell label spanning both header rows in matrix mode", async () => {

@@ -1892,6 +1892,10 @@ button:disabled {
   background: var(--bg-card);
 }
 
+.category-matrix-view-scroll.is-filter-popover-open {
+  padding-bottom: min(34rem, calc(100vh - 5rem));
+}
+
 .category-matrix-view-scroll:focus-visible {
   outline: 2px solid var(--accent-primary);
   outline-offset: 3px;
@@ -2117,7 +2121,10 @@ button:disabled {
   flex-direction: column;
   gap: var(--spacing-sm);
   width: min(18rem, calc(100vw - 2rem));
+  max-height: min(34rem, calc(100vh - 5rem));
   padding: var(--spacing-md);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--bg-card);

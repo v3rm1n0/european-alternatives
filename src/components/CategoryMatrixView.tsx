@@ -378,6 +378,14 @@ export default function CategoryMatrixView({
     filteredCriteria.some((criterion) => criterion.id === openFilterCriterionId)
       ? openFilterCriterionId
       : null;
+  const scrollFrameClassName =
+    visibleOpenFilterCriterionId === null
+      ? "category-matrix-view-scroll-frame"
+      : "category-matrix-view-scroll-frame is-filter-popover-open";
+  const scrollContainerClassName =
+    visibleOpenFilterCriterionId === null
+      ? "category-matrix-view-scroll"
+      : "category-matrix-view-scroll is-filter-popover-open";
   const criteriaById = useMemo(() => {
     const entries = groupsWithCriteria.flatMap((group) => group.criteria);
     return new Map(entries.map((criterion) => [criterion.id, criterion]));
@@ -555,7 +563,7 @@ export default function CategoryMatrixView({
         </div>
       ) : (
         <>
-          <div className="category-matrix-view-scroll-frame">
+          <div className={scrollFrameClassName}>
             <div
               className="category-matrix-view-scrollbar-top"
               aria-hidden="true"
@@ -572,7 +580,7 @@ export default function CategoryMatrixView({
               />
             </div>
             <div
-              className="category-matrix-view-scroll"
+              className={scrollContainerClassName}
               tabIndex={0}
               ref={bottomScrollRef}
               onScroll={() => syncScroll("bottom")}
