@@ -33,6 +33,7 @@ const realResearchIssue = resolve("scripts/research-issue-codex.sh");
 const realResearchFact = resolve("scripts/research-fact-codex.sh");
 const realVerifyFact = resolve("scripts/verify-fact-codex.sh");
 const realFinalize = resolve("scripts/finalize-issue-codex.sh");
+const SUBPROCESS_E2E_TIMEOUT_MS = 60_000;
 
 // Banned scoring/trust-leak keys lifted from
 // scripts/lib/finalize-issue-codex.mjs (BANNED_FINALIZER_KEYS) plus the
@@ -212,6 +213,7 @@ function verifyNewAlternativeMockResponse(
       evidence: {
         name: {
           verdict: "supports",
+          sourceClass: "independent",
           sourceUrl: "https://en.wikipedia.org/wiki/Cryptee",
           sourceTitle: "Cryptee — Wikipedia",
           accessedDate,
@@ -219,6 +221,7 @@ function verifyNewAlternativeMockResponse(
         },
         description_en: {
           verdict: "supports",
+          sourceClass: "independent",
           sourceUrl: "https://en.wikipedia.org/wiki/Cryptee",
           sourceTitle: "Cryptee — Wikipedia",
           accessedDate,
@@ -226,6 +229,7 @@ function verifyNewAlternativeMockResponse(
         },
         country_code: {
           verdict: "supports",
+          sourceClass: "independent",
           sourceUrl: "https://e-estonia.com/cryptee",
           sourceTitle: "e-Estonia: Cryptee",
           accessedDate,
@@ -233,6 +237,7 @@ function verifyNewAlternativeMockResponse(
         },
         website_url: {
           verdict: "supports",
+          sourceClass: "independent",
           sourceUrl: "https://en.wikipedia.org/wiki/Cryptee",
           sourceTitle: "Cryptee — Wikipedia",
           accessedDate,
@@ -240,6 +245,7 @@ function verifyNewAlternativeMockResponse(
         },
         categories: {
           verdict: "supports",
+          sourceClass: "independent",
           sourceUrl: "https://en.wikipedia.org/wiki/Cryptee",
           sourceTitle: "Cryptee — Wikipedia",
           accessedDate,
@@ -877,56 +883,60 @@ describe("codex pipeline E2E (mocked) — fail-closed safety contract", () => {
   });
 
   // AC1: new_alternative success — exactly one write, one comment, one close.
-  it("AC1: new_alternative happy path writes once, comments once, closes once", () => {
-    const issueNumber = 11_801;
-    createdIssueNumbers.push(issueNumber);
-    const harness = setupPipelineHarness({
-      issueNumber,
-      classification: "new_alternative",
-    });
+  it(
+    "AC1: new_alternative happy path writes once, comments once, closes once",
+    () => {
+      const issueNumber = 11_801;
+      createdIssueNumbers.push(issueNumber);
+      const harness = setupPipelineHarness({
+        issueNumber,
+        classification: "new_alternative",
+      });
 
-    try {
-      const result = runOrchestrator(
-        [String(issueNumber)],
-        harness.env,
-        harness.pathPrefix,
-      );
-      expect(result.status, `orchestrator stderr: ${result.stderr}`).toBe(0);
+      try {
+        const result = runOrchestrator(
+          [String(issueNumber)],
+          harness.env,
+          harness.pathPrefix,
+        );
+        expect(result.status, `orchestrator stderr: ${result.stderr}`).toBe(0);
 
-      // Exactly one apply call to the new-alternative branch.
-      expect(harness.applyNewAltRecordPath).not.toBeNull();
-      const applyCalls = readApplyCalls(harness.applyNewAltRecordPath ?? "");
-      expect(applyCalls.length).toBe(1);
+        // Exactly one apply call to the new-alternative branch.
+        expect(harness.applyNewAltRecordPath).not.toBeNull();
+        const applyCalls = readApplyCalls(harness.applyNewAltRecordPath ?? "");
+        expect(applyCalls.length).toBe(1);
 
-      // gh: issue view (twice during research+verify if both call it), then
-      // exactly one comment then exactly one close.
-      const ghCalls = readGhCalls(harness.recordPath);
-      const commentCalls = ghCalls.filter((c) => c.argv[1] === "comment");
-      const closeCalls = ghCalls.filter((c) => c.argv[1] === "close");
-      expect(commentCalls.length).toBe(1);
-      expect(closeCalls.length).toBe(1);
+        // gh: issue view (twice during research+verify if both call it), then
+        // exactly one comment then exactly one close.
+        const ghCalls = readGhCalls(harness.recordPath);
+        const commentCalls = ghCalls.filter((c) => c.argv[1] === "comment");
+        const closeCalls = ghCalls.filter((c) => c.argv[1] === "close");
+        expect(commentCalls.length).toBe(1);
+        expect(closeCalls.length).toBe(1);
 
-      // Order: the comment was recorded before the close (so the audit comment
-      // is in place before the issue closes).
-      const commentIdx = ghCalls.findIndex((c) => c.argv[1] === "comment");
-      const closeIdx = ghCalls.findIndex((c) => c.argv[1] === "close");
-      expect(commentIdx).toBeGreaterThanOrEqual(0);
-      expect(closeIdx).toBeGreaterThan(commentIdx);
+        // Order: the comment was recorded before the close (so the audit comment
+        // is in place before the issue closes).
+        const commentIdx = ghCalls.findIndex((c) => c.argv[1] === "comment");
+        const closeIdx = ghCalls.findIndex((c) => c.argv[1] === "close");
+        expect(commentIdx).toBeGreaterThanOrEqual(0);
+        expect(closeIdx).toBeGreaterThan(commentIdx);
 
-      // The fact-correction apply shim must NOT have been invoked.
-      const factApplyCalls = readApplyCalls(harness.applyRecordPath ?? "");
-      expect(factApplyCalls.length).toBe(0);
+        // The fact-correction apply shim must NOT have been invoked.
+        const factApplyCalls = readApplyCalls(harness.applyRecordPath ?? "");
+        expect(factApplyCalls.length).toBe(0);
 
-      const parsed = readResultJson(issueNumber);
-      expect(parsed.classification).toBe("new_alternative");
-      expect(parsed.writes_applied).toBe(true);
-      expect(parsed.outcome).toBe("applied");
+        const parsed = readResultJson(issueNumber);
+        expect(parsed.classification).toBe("new_alternative");
+        expect(parsed.writes_applied).toBe(true);
+        expect(parsed.outcome).toBe("applied");
 
-      assertNoBannedKeysInArtifacts(issueNumber, ghCalls);
-    } finally {
-      rmSync(harness.tempDir, { recursive: true, force: true });
-    }
-  });
+        assertNoBannedKeysInArtifacts(issueNumber, ghCalls);
+      } finally {
+        rmSync(harness.tempDir, { recursive: true, force: true });
+      }
+    },
+    SUBPROCESS_E2E_TIMEOUT_MS,
+  );
 
   // AC2: catalog_fact_correction success — exactly one write, comment, close.
   it("AC2: catalog_fact_correction happy path writes once, comments once, closes once", () => {

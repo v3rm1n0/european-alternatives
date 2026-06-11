@@ -69,6 +69,7 @@ function newAlternativeVerifiedAction(
     verifierEvidence: {
       name: {
         verdict: "supports",
+        sourceClass: "independent",
         sourceUrl: "https://e-estonia.com/cryptee",
         sourceTitle: "e-Estonia: Cryptee",
         accessedDate: "2026-05-27",
@@ -76,6 +77,7 @@ function newAlternativeVerifiedAction(
       },
       country_code: {
         verdict: "supports",
+        sourceClass: "independent",
         sourceUrl: "https://en.wikipedia.org/wiki/Cryptee",
         sourceTitle: "Cryptee — Wikipedia",
         accessedDate: "2026-05-27",
@@ -200,7 +202,10 @@ type FakeGhConfig = {
   exitFor: Record<string, number>;
 };
 
-function writeFakeGh(tempDir: string, config: FakeGhConfig): {
+function writeFakeGh(
+  tempDir: string,
+  config: FakeGhConfig,
+): {
   fakeGhPath: string;
   recordPath: string;
 } {
@@ -424,6 +429,40 @@ describe("finalize-issue-codex buildSuccessComment — new_alternative", () => {
     expect(body).toMatch(/independent/i);
   });
 
+  it("renders official and legal verifier source classes without claiming independence", async () => {
+    const { buildSuccessComment } = await loadFinalizerModule();
+
+    const body = buildSuccessComment({
+      verifiedAction: newAlternativeVerifiedAction({
+        verifierEvidence: {
+          name: {
+            verdict: "supports",
+            sourceClass: "official",
+            sourceUrl: "https://crypt.ee/about",
+            sourceTitle: "Cryptee — About",
+            accessedDate: "2026-05-27",
+            auditQuote: "Cryptee is the product name on the official site.",
+          },
+          country_code: {
+            verdict: "supports",
+            sourceClass: "legal",
+            sourceUrl: "https://crypt.ee/legal",
+            sourceTitle: "Cryptee — Legal",
+            accessedDate: "2026-05-27",
+            auditQuote: "Cryptee lists Estonia in its legal notice.",
+          },
+        },
+      }),
+      mutationOutcome: newAlternativeMutationOutcome(),
+    });
+
+    expect(body).toContain("**Verifier sources:**");
+    expect(body).not.toContain("**Independent verifier sources:**");
+    expect(body).toContain("Cryptee — About [source class: official]");
+    expect(body).toContain("Cryptee — Legal [source class: legal]");
+    expect(body).not.toContain("[source class: independent]");
+  });
+
   it("renders one bullet per verifier evidence entry (so the audit is complete)", async () => {
     const { buildSuccessComment } = await loadFinalizerModule();
 
@@ -451,13 +490,19 @@ describe("finalize-issue-codex buildSuccessComment — catalog_fact_correction",
             column: "country_code",
             currentValue: "de",
             proposedValue: "fr",
-            source: { url: "https://element.io/legal", accessedDate: "2026-05-27" },
+            source: {
+              url: "https://element.io/legal",
+              accessedDate: "2026-05-27",
+            },
           },
           {
             table: "entry_tags",
             op: "add",
             tagSlug: "decentralized",
-            source: { url: "https://element.io/blog", accessedDate: "2026-05-27" },
+            source: {
+              url: "https://element.io/blog",
+              accessedDate: "2026-05-27",
+            },
           },
         ],
       },
@@ -523,6 +568,33 @@ describe("finalize-issue-codex buildSuccessComment — catalog_fact_correction",
 
     expect(body).toMatch(/fact correction|catalog_fact_correction/i);
     expect(body).not.toMatch(/inserted as new alternative/i);
+  });
+
+  it("keeps fact-correction verifier sources independent without source-class badges", async () => {
+    const { buildSuccessComment } = await loadFinalizerModule();
+
+    const body = buildSuccessComment({
+      verifiedAction: factCorrectionVerifiedAction({
+        verifierEvidence: [
+          {
+            table: "catalog_entries",
+            column: "country_code",
+            proposedValue: "fr",
+            verdict: "supports",
+            sourceClass: "independent",
+            sourceUrl: "https://societe.com/element-fr",
+            sourceTitle: "Element registry profile",
+            accessedDate: "2026-05-27",
+            auditQuote: "Element SAS, France.",
+          },
+        ],
+      }),
+      mutationOutcome: factCorrectionMutationOutcome(),
+    });
+
+    expect(body).toContain("**Independent verifier sources:**");
+    expect(body).toContain("Element registry profile");
+    expect(body).not.toContain("[source class:");
   });
 
   it("still includes the Trust Score remains pending note for fact corrections", async () => {

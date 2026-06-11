@@ -150,8 +150,9 @@ function renderResearcherSourcesForFactCorrection(changes) {
   return lines;
 }
 
-function renderVerifierEvidenceEntries(evidenceEntries) {
+function renderVerifierEvidenceEntries(evidenceEntries, options = {}) {
   const lines = [];
+  const includeSourceClass = options.includeSourceClass === true;
 
   for (const entry of evidenceEntries) {
     if (!isPlainObject(entry) || typeof entry.sourceUrl !== "string") {
@@ -164,8 +165,20 @@ function renderVerifierEvidenceEntries(evidenceEntries) {
         : typeof entry.column === "string"
           ? entry.column
           : "verifier source";
+    const sourceClass =
+      includeSourceClass &&
+      typeof entry.sourceClass === "string" &&
+      entry.sourceClass.trim() !== ""
+        ? ` [source class: ${entry.sourceClass.trim()}]`
+        : "";
 
-    lines.push(formatSourceBullet(entry.sourceUrl, title, entry.accessedDate));
+    lines.push(
+      formatSourceBullet(
+        entry.sourceUrl,
+        `${title}${sourceClass}`,
+        entry.accessedDate,
+      ),
+    );
 
     const quote = defuseAuditQuote(entry.auditQuote);
 
@@ -342,16 +355,15 @@ function buildNewAlternativeBody(verifiedAction, mutationOutcome) {
         : isPlainObject(mutationOutcome.result) &&
             typeof mutationOutcome.result.slug === "string"
           ? mutationOutcome.result.slug
-        : "?";
+          : "?";
   const entryId =
-    mutationOutcome.entry_id !== undefined &&
-    mutationOutcome.entry_id !== null
+    mutationOutcome.entry_id !== undefined && mutationOutcome.entry_id !== null
       ? String(mutationOutcome.entry_id)
       : isPlainObject(mutationOutcome.result) &&
           mutationOutcome.result.entryId !== undefined &&
           mutationOutcome.result.entryId !== null
         ? String(mutationOutcome.result.entryId)
-      : "?";
+        : "?";
   const name =
     typeof newAlternative.name === "string" && newAlternative.name.trim() !== ""
       ? newAlternative.name
@@ -381,14 +393,16 @@ function buildNewAlternativeBody(verifiedAction, mutationOutcome) {
 
   lines.push("");
 
-  lines.push("**Independent verifier sources:**");
+  lines.push("**Verifier sources:**");
   const verifierEvidence = verifiedAction.verifierEvidence;
   const evidenceArray = isPlainObject(verifierEvidence)
     ? Object.values(verifierEvidence)
     : Array.isArray(verifierEvidence)
       ? verifierEvidence
       : [];
-  const verifierLines = renderVerifierEvidenceEntries(evidenceArray);
+  const verifierLines = renderVerifierEvidenceEntries(evidenceArray, {
+    includeSourceClass: true,
+  });
 
   if (verifierLines.length === 0) {
     lines.push("- (none recorded)");

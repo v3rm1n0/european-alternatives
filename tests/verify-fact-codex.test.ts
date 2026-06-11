@@ -198,12 +198,126 @@ function evidenceRecord(
 ): Record<string, unknown> {
   return {
     verdict: "supports",
+    sourceClass: "independent",
     sourceUrl: "https://e-estonia.com/cryptee-profile",
     sourceTitle: "e-Estonia: Cryptee",
     accessedDate: "2026-05-27",
     auditQuote:
       "Cryptee is an Estonian end-to-end encrypted document and photo storage service headquartered in Tallinn.",
     ...overrides,
+  };
+}
+
+function smallOfficialLegalResearcherPayload(): ResearcherPayload {
+  return researcherNewAlternativePayload({
+    slug: "modelhive",
+    name: "ModelHive",
+    description_en: "German AI model catalog and deployment service.",
+    country_code: "de",
+    website_url: "https://modelhive.ai",
+    pricing: "paid",
+    is_open_source: null,
+    open_source_level: null,
+    founded_year: null,
+    headquarters_city: null,
+    self_hostable: null,
+    categories: [{ category_id: "ai-ml", is_primary: true }],
+    tags: [],
+    replaces_us: [],
+    sources: {
+      name: {
+        url: "https://modelhive.ai/",
+        title: "ModelHive",
+        accessedDate: "2026-05-27",
+      },
+      description_en: {
+        url: "https://modelhive.ai/",
+        title: "ModelHive",
+        accessedDate: "2026-05-27",
+      },
+      country_code: {
+        url: "https://modelhive.ai/legal",
+        title: "ModelHive Legal Notice",
+        accessedDate: "2026-05-27",
+      },
+      website_url: {
+        url: "https://modelhive.ai/",
+        title: "ModelHive",
+        accessedDate: "2026-05-27",
+      },
+      pricing: {
+        url: "https://modelhive.ai/pricing",
+        title: "ModelHive Pricing",
+        accessedDate: "2026-05-27",
+      },
+      categories: {
+        url: "https://modelhive.ai/",
+        title: "ModelHive",
+        accessedDate: "2026-05-27",
+      },
+    },
+  });
+}
+
+function smallOfficialLegalVerifierPayload(
+  evidenceOverrides: Record<string, Record<string, unknown>> = {},
+): Record<string, unknown> {
+  const evidence: Record<string, Record<string, unknown>> = {
+    name: evidenceRecord({
+      sourceClass: "official",
+      sourceUrl: "https://modelhive.ai/",
+      sourceTitle: "ModelHive",
+      auditQuote: "ModelHive is the product name shown on the official site.",
+    }),
+    description_en: evidenceRecord({
+      sourceClass: "official",
+      sourceUrl: "https://modelhive.ai/",
+      sourceTitle: "ModelHive",
+      auditQuote:
+        "ModelHive provides an AI model catalog and deployment service.",
+    }),
+    country_code: evidenceRecord({
+      sourceClass: "legal",
+      sourceUrl: "https://modelhive.ai/legal",
+      sourceTitle: "ModelHive Legal Notice",
+      auditQuote: "ModelHive GmbH is registered in Berlin, Germany.",
+    }),
+    website_url: evidenceRecord({
+      sourceClass: "official",
+      sourceUrl: "https://modelhive.ai/",
+      sourceTitle: "ModelHive",
+      auditQuote: "The official website is https://modelhive.ai.",
+    }),
+    pricing: evidenceRecord({
+      sourceClass: "official",
+      sourceUrl: "https://modelhive.ai/pricing",
+      sourceTitle: "ModelHive Pricing",
+      auditQuote: "ModelHive lists paid plans on its official pricing page.",
+    }),
+    categories: evidenceRecord({
+      sourceClass: "official",
+      sourceUrl: "https://modelhive.ai/",
+      sourceTitle: "ModelHive",
+      auditQuote:
+        "ModelHive describes itself as an AI model catalog and deployment service.",
+    }),
+  };
+
+  for (const [key, value] of Object.entries(evidenceOverrides)) {
+    if (value === undefined) {
+      delete evidence[key];
+    } else {
+      evidence[key] = value;
+    }
+  }
+
+  return {
+    issue: { number: baselineIssue.number },
+    classification: { action: "new_alternative" },
+    accessedDate: "2026-05-27",
+    newAlternative: {
+      evidence,
+    },
   };
 }
 
@@ -339,7 +453,7 @@ describe("verify-fact-codex sentinels", () => {
 });
 
 describe("verify-fact-codex prompt builders", () => {
-  it("new_alternative prompt embeds issue context, researcher payload, and same-source instruction", async () => {
+  it("new_alternative prompt embeds issue context and source-class verification policy", async () => {
     const { buildNewAlternativeVerificationPrompt } =
       await loadVerifierModule();
 
@@ -355,7 +469,17 @@ describe("verify-fact-codex prompt builders", () => {
     expect(prompt).toContain("crypt.ee");
     expect(prompt).toContain(beginSentinel);
     expect(prompt).toContain(endSentinel);
-    expect(prompt).toMatch(/independent|different.*domain|same.?source/i);
+    expect(prompt).toMatch(/sourceClass/i);
+    expect(prompt).toMatch(/official/i);
+    expect(prompt).toMatch(/legal/i);
+    expect(prompt).toMatch(/registry/i);
+    expect(prompt).toMatch(/independent/i);
+    expect(prompt).toMatch(/authoritative|first.?party/i);
+    expect(prompt).toMatch(/pending|unvalidated/i);
+    expect(prompt).toMatch(
+      /different.*domain.*preferred|preferred.*different.*domain/i,
+    );
+    expect(prompt).toMatch(/not mandatory|not required|can support/i);
     expect(prompt).toMatch(/audit.?quote|quote/i);
     expect(prompt).toMatch(/accessed.?date/i);
     expect(prompt).toMatch(/verify|verification/i);
@@ -565,6 +689,36 @@ describe("verify-fact-codex parser — happy paths", () => {
 
     for (const field of SOURCE_FIELDS) {
       expect(evidence[field]).toBeDefined();
+    }
+  });
+
+  it("parses a pending new alternative supported only by official and legal sources", async () => {
+    const { parseVerificationResponse } = await loadVerifierModule();
+
+    const result = parseVerificationResponse(
+      modelResponse(smallOfficialLegalVerifierPayload()),
+      smallOfficialLegalResearcherPayload(),
+      newAlternativeClassification,
+    );
+
+    expect(result.action).toBe("new_alternative");
+
+    const evidence = (result.newAlternative as Record<string, unknown>)
+      .evidence as Record<string, Record<string, unknown>>;
+    expect(Object.keys(evidence).sort()).toEqual([
+      "categories",
+      "country_code",
+      "description_en",
+      "name",
+      "pricing",
+      "website_url",
+    ]);
+    expect(evidence.name.sourceClass).toBe("official");
+    expect(evidence.pricing.sourceClass).toBe("official");
+    expect(evidence.country_code.sourceClass).toBe("legal");
+
+    for (const record of Object.values(evidence)) {
+      expect(String(record.sourceUrl)).toMatch(/^https:\/\/modelhive\.ai/);
     }
   });
 
@@ -919,6 +1073,54 @@ describe("verify-fact-codex parser — source shape", () => {
     ).toThrow(/url|http|source|scheme/i);
   });
 
+  const publicHttpSourceClassCases: Array<{
+    field: string;
+    sourceClass: "official" | "legal" | "registry" | "independent";
+    sourceUrl: string;
+  }> = [
+    {
+      field: "name",
+      sourceClass: "official",
+      sourceUrl: "http://modelhive.ai/",
+    },
+    {
+      field: "country_code",
+      sourceClass: "legal",
+      sourceUrl: "http://modelhive.ai/legal",
+    },
+    {
+      field: "country_code",
+      sourceClass: "registry",
+      sourceUrl: "http://www.unternehmensregister.de/modelhive",
+    },
+    {
+      field: "country_code",
+      sourceClass: "independent",
+      sourceUrl: "http://e-estonia.com/country",
+    },
+  ];
+
+  for (const { field, sourceClass, sourceUrl } of publicHttpSourceClassCases) {
+    it(`rejects public http ${sourceClass} verifier evidence URLs`, async () => {
+      const { parseVerificationResponse } = await loadVerifierModule();
+
+      expect(() =>
+        parseVerificationResponse(
+          modelResponse(
+            smallOfficialLegalVerifierPayload({
+              [field]: evidenceRecord({
+                sourceClass,
+                sourceUrl,
+              }),
+            }),
+          ),
+          smallOfficialLegalResearcherPayload(),
+          newAlternativeClassification,
+        ),
+      ).toThrow(/sourceUrl|https|scheme/i);
+    });
+  }
+
   it("rejects sourceUrl pointing at a private 192.168.x.x host", async () => {
     const { parseVerificationResponse } = await loadVerifierModule();
 
@@ -1104,6 +1306,7 @@ describe("verify-fact-codex parser — source shape", () => {
 
     const noUrl = {
       verdict: "supports",
+      sourceClass: "independent",
       sourceTitle: "no url",
       accessedDate: "2026-05-27",
       auditQuote: "Some claim text.",
@@ -1123,8 +1326,174 @@ describe("verify-fact-codex parser — source shape", () => {
   });
 });
 
-describe("verify-fact-codex parser — same-source rejection", () => {
-  it("rejects when verifier URL is byte-for-byte equal to researcher URL for that field", async () => {
+describe("verify-fact-codex parser — source-class policy", () => {
+  it("rejects supporting evidence that omits sourceClass", async () => {
+    const { parseVerificationResponse } = await loadVerifierModule();
+
+    const missingSourceClass = evidenceRecord({
+      sourceUrl: "https://e-estonia.com/country",
+    });
+    delete missingSourceClass.sourceClass;
+
+    expect(() =>
+      parseVerificationResponse(
+        modelResponse(
+          newAlternativeVerifierPayload({
+            country_code: missingSourceClass,
+          }),
+        ),
+        researcherNewAlternativePayload(),
+        newAlternativeClassification,
+      ),
+    ).toThrow(/sourceClass|source class|class/i);
+  });
+
+  it("rejects supporting evidence with an unknown sourceClass", async () => {
+    const { parseVerificationResponse } = await loadVerifierModule();
+
+    expect(() =>
+      parseVerificationResponse(
+        modelResponse(
+          newAlternativeVerifierPayload({
+            country_code: evidenceRecord({
+              sourceClass: "blog-roundup",
+              sourceUrl: "https://e-estonia.com/country",
+            }),
+          }),
+        ),
+        researcherNewAlternativePayload(),
+        newAlternativeClassification,
+      ),
+    ).toThrow(/sourceClass|blog-roundup|official|legal|registry|independent/i);
+  });
+
+  it("accepts same-domain official evidence for ordinary catalog facts", async () => {
+    const { parseVerificationResponse } = await loadVerifierModule();
+
+    const result = parseVerificationResponse(
+      modelResponse(
+        smallOfficialLegalVerifierPayload({
+          name: evidenceRecord({
+            sourceClass: "official",
+            sourceUrl: "https://modelhive.ai/",
+            sourceTitle: "ModelHive",
+            auditQuote:
+              "ModelHive is the product name shown on the official site.",
+          }),
+        }),
+      ),
+      smallOfficialLegalResearcherPayload(),
+      newAlternativeClassification,
+    );
+
+    const evidence = (result.newAlternative as Record<string, unknown>)
+      .evidence as Record<string, Record<string, unknown>>;
+    expect(evidence.name).toMatchObject({
+      sourceClass: "official",
+      sourceUrl: "https://modelhive.ai/",
+    });
+  });
+
+  it("accepts same-domain legal evidence for operator jurisdiction", async () => {
+    const { parseVerificationResponse } = await loadVerifierModule();
+
+    const result = parseVerificationResponse(
+      modelResponse(
+        smallOfficialLegalVerifierPayload({
+          country_code: evidenceRecord({
+            sourceClass: "legal",
+            sourceUrl: "https://modelhive.ai/legal",
+            sourceTitle: "ModelHive Legal Notice",
+            auditQuote: "ModelHive GmbH is registered in Berlin, Germany.",
+          }),
+        }),
+      ),
+      smallOfficialLegalResearcherPayload(),
+      newAlternativeClassification,
+    );
+
+    const evidence = (result.newAlternative as Record<string, unknown>)
+      .evidence as Record<string, Record<string, unknown>>;
+    expect(evidence.country_code).toMatchObject({
+      sourceClass: "legal",
+      sourceUrl: "https://modelhive.ai/legal",
+    });
+  });
+
+  it("accepts registry evidence for operator jurisdiction", async () => {
+    const { parseVerificationResponse } = await loadVerifierModule();
+
+    const result = parseVerificationResponse(
+      modelResponse(
+        smallOfficialLegalVerifierPayload({
+          country_code: evidenceRecord({
+            sourceClass: "registry",
+            sourceUrl: "https://www.unternehmensregister.de/modelhive",
+            sourceTitle: "Unternehmensregister",
+            auditQuote:
+              "ModelHive GmbH is recorded with its registered seat in Germany.",
+          }),
+        }),
+      ),
+      smallOfficialLegalResearcherPayload(),
+      newAlternativeClassification,
+    );
+
+    const evidence = (result.newAlternative as Record<string, unknown>)
+      .evidence as Record<string, Record<string, unknown>>;
+    expect(evidence.country_code).toMatchObject({
+      sourceClass: "registry",
+      sourceUrl: "https://www.unternehmensregister.de/modelhive",
+    });
+  });
+
+  it("rejects same-domain evidence that claims to be independent", async () => {
+    const { parseVerificationResponse } = await loadVerifierModule();
+
+    expect(() =>
+      parseVerificationResponse(
+        modelResponse(
+          smallOfficialLegalVerifierPayload({
+            name: evidenceRecord({
+              sourceClass: "independent",
+              sourceUrl: "https://modelhive.ai/",
+              sourceTitle: "ModelHive",
+              auditQuote:
+                "ModelHive is the product name shown on the official site.",
+            }),
+          }),
+        ),
+        smallOfficialLegalResearcherPayload(),
+        newAlternativeClassification,
+      ),
+    ).toThrow(/sourceClass|independent|same.?domain|registrable|same/i);
+  });
+
+  it("rejects country_code support without legal, registry, or independent authority", async () => {
+    const { parseVerificationResponse } = await loadVerifierModule();
+
+    expect(() =>
+      parseVerificationResponse(
+        modelResponse(
+          newAlternativeVerifierPayload({
+            country_code: evidenceRecord({
+              sourceClass: "official",
+              sourceUrl: "https://e-estonia.com/cryptee-profile",
+              sourceTitle: "e-Estonia: Cryptee",
+              auditQuote:
+                "Cryptee is an Estonian encrypted document and photo service.",
+            }),
+          }),
+        ),
+        researcherNewAlternativePayload(),
+        newAlternativeClassification,
+      ),
+    ).toThrow(
+      /country_code|jurisdiction|sourceClass|legal|registry|independent/i,
+    );
+  });
+
+  it("accepts independent evidence only when verifier URL differs by registrable domain", async () => {
     const { parseVerificationResponse } = await loadVerifierModule();
 
     const researcher = researcherNewAlternativePayload();
@@ -1143,65 +1512,41 @@ describe("verify-fact-codex parser — same-source rejection", () => {
         modelResponse(
           newAlternativeVerifierPayload({
             country_code: evidenceRecord({
-              sourceUrl: "https://crypt.ee/legal",
+              sourceClass: "independent",
+              sourceUrl: "https://e-estonia.com/country",
             }),
           }),
         ),
         researcher,
         newAlternativeClassification,
       ),
-    ).toThrow(/same.?source|same.?domain|registrable|independent|same/i);
-  });
-
-  it("rejects when verifier URL is a different path on the same researcher domain", async () => {
-    const { parseVerificationResponse } = await loadVerifierModule();
-
-    expect(() =>
-      parseVerificationResponse(
-        modelResponse(
-          newAlternativeVerifierPayload({
-            country_code: evidenceRecord({
-              sourceUrl: "https://crypt.ee/about-us",
-            }),
-          }),
-        ),
-        researcherNewAlternativePayload(),
-        newAlternativeClassification,
-      ),
-    ).toThrow(/same.?source|same.?domain|registrable|independent|same/i);
-  });
-
-  it("rejects when verifier URL is a subdomain of the researcher's eTLD+1", async () => {
-    const { parseVerificationResponse } = await loadVerifierModule();
-
-    expect(() =>
-      parseVerificationResponse(
-        modelResponse(
-          newAlternativeVerifierPayload({
-            country_code: evidenceRecord({
-              sourceUrl: "https://docs.crypt.ee/legal",
-            }),
-          }),
-        ),
-        researcherNewAlternativePayload(),
-        newAlternativeClassification,
-      ),
-    ).toThrow(
-      /same.?source|same.?domain|registrable|independent|subdomain|same/i,
-    );
-  });
-
-  it("accepts when verifier URL differs by registrable domain from researcher URL", async () => {
-    const { parseVerificationResponse } = await loadVerifierModule();
-
-    // All defaults already use different domains (crypt.ee vs e-estonia.com)
-    expect(() =>
-      parseVerificationResponse(
-        modelResponse(newAlternativeVerifierPayload()),
-        researcherNewAlternativePayload(),
-        newAlternativeClassification,
-      ),
     ).not.toThrow();
+  });
+
+  it("keeps catalog_fact_correction on the independent-domain policy even with sourceClass", async () => {
+    const { parseVerificationResponse } = await loadVerifierModule();
+
+    const verifier = factCorrectionVerifierPayload([
+      {
+        table: "catalog_entries",
+        column: "country_code",
+        proposedValue: "fr",
+        ...evidenceRecord({
+          sourceClass: "legal",
+          sourceUrl: "https://element.io/legal",
+          sourceTitle: "Element legal",
+          auditQuote: "Element SAS is registered in France.",
+        }),
+      },
+    ]);
+
+    expect(() =>
+      parseVerificationResponse(
+        modelResponse(verifier),
+        researcherFactCorrectionPayload(),
+        factCorrectionClassification,
+      ),
+    ).toThrow(/same.?source|same.?domain|independent|registrable|same/i);
   });
 });
 
@@ -1669,6 +2014,7 @@ describe("verify-fact-codex runner CLI", () => {
           path: "newAlternative.evidence.country_code",
           field: "country_code",
           verdict: "inconclusive",
+          sourceClass: "independent",
           sourceUrl: "https://e-estonia.com/country",
           sourceTitle: "e-Estonia company profile",
           auditQuote: "The page names the product but not the legal entity.",
@@ -1804,6 +2150,7 @@ describe("verify-fact-codex runner CLI", () => {
           path: "newAlternative.evidence.country_code",
           field: "country_code",
           verdict: "source-inaccessible",
+          sourceClass: "independent",
           sourceUrl: "https://e-estonia.com/country",
           sourceTitle: "e-Estonia company profile",
           reasoning: "The verifier could not access the independent source.",
@@ -1957,7 +2304,54 @@ describe("verify-fact-codex runner CLI", () => {
     }
   });
 
-  it("fails closed (exit 65) on same-source rejection", () => {
+  it("emits a verified_action for official/legal-only pending import evidence", () => {
+    const tempDir = makeProjectTempDir("verify-fact-codex-");
+
+    try {
+      const inputs = writeRunnerInputs(
+        tempDir,
+        baselineIssue,
+        newAlternativeClassification,
+        smallOfficialLegalResearcherPayload(),
+        modelResponse(smallOfficialLegalVerifierPayload()),
+      );
+      const feedbackPath = join(tempDir, "verification-feedback.json");
+
+      const result = runRunner([
+        "--issue-file",
+        inputs.issuePath,
+        "--classification-file",
+        inputs.classificationPath,
+        "--research-file",
+        inputs.researchPath,
+        "--mock-response-file",
+        inputs.mockResponsePath,
+        "--feedback-output-file",
+        feedbackPath,
+      ]);
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe("");
+
+      const parsed = parseJsonObject(result.stdout);
+      expect(parsed).toMatchObject({
+        issueNumber: baselineIssue.number,
+        action: "new_alternative",
+      });
+
+      const evidence = parsed.verifierEvidence as Record<
+        string,
+        Record<string, unknown>
+      >;
+      expect(evidence.name.sourceClass).toBe("official");
+      expect(evidence.country_code.sourceClass).toBe("legal");
+      expect(existsSync(feedbackPath)).toBe(false);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails closed (exit 65) when same-domain evidence claims to be independent", () => {
     const tempDir = makeProjectTempDir("verify-fact-codex-");
 
     try {
@@ -1969,6 +2363,7 @@ describe("verify-fact-codex runner CLI", () => {
         modelResponse(
           newAlternativeVerifierPayload({
             country_code: evidenceRecord({
+              sourceClass: "independent",
               sourceUrl: "https://crypt.ee/about",
             }),
           }),

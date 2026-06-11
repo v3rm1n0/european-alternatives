@@ -196,15 +196,19 @@ bash scripts/process-suggestion-issue-codex.sh 516 --dry-run
 bash scripts/process-suggestion-issue-codex.sh 516 --max-verification-attempts 3
 ```
 
-The orchestrator runs the issue through classification, a catalog snapshot, fact research, independent verification, apply, and GitHub finalization. It writes stage artifacts and `result.json` under `tmp/issues/<issue-number>/`. `--dry-run` is propagated to every stage; in dry-run mode the pipeline can research and verify, but it does not write to the database and does not mutate GitHub.
+The orchestrator runs the issue through classification, a catalog snapshot, fact research, source-class-aware verification, apply, and GitHub finalization. It writes stage artifacts and `result.json` under `tmp/issues/<issue-number>/`. `--dry-run` is propagated to every stage; in dry-run mode the pipeline can research and verify, but it does not write to the database and does not mutate GitHub.
 
 Verification attempts are capped by `--max-verification-attempts <n>`, or by `EUROALT_MAX_VERIFICATION_ATTEMPTS` when the CLI flag is omitted. The default is 2 total attempts. The count includes the first research/verify pass, so `1` preserves the no-retry behavior and `2` allows one corrective pass.
+
+For pending `new_alternative` imports, the verifier independently evaluates every sourced catalog fact and records the evidence source class. Independent different-domain corroboration is preferred and uses `sourceClass: "independent"`, but basic pending imports can also pass with authoritative `official`, `legal`, or `registry` evidence when the source directly supports the fact and no contradiction is found. Legal/operator jurisdiction fields such as `country_code` must be supported by `legal`, `registry`, or truly independent evidence; a generic product page is not enough. Catalog fact corrections keep the stricter independent-domain verification standard because they update existing facts rather than creating a pending entry.
+
+Verifier evidence `sourceUrl` values must be public `https://` URLs. Public `http://`, localhost, loopback, private, and reserved hosts fail closed instead of becoming retry feedback. Successful new-alternative finalization comments list verifier evidence under `Verifier sources` and include `[source class: ...]` on each verifier source, so authoritative official/legal/registry evidence is not described as independent corroboration.
 
 If the verifier returns a structurally valid review with a non-supporting verdict (`inconclusive`, `contradicts`, or `source-inaccessible`), the pipeline writes structured feedback and retries research while the attempt budget remains. The next research pass receives the original issue, the catalog snapshot, the previous research payload, and the verifier feedback. Apply/finalize only run after a verifier pass where every required evidence record is `supports`.
 
 If research parsing fails with retryable parser feedback, such as a missing source entry for a source-backed field, the pipeline writes `research-parser-feedback-<attempt>.json` and retries research while the attempt budget remains. The next research pass receives the parser feedback, plus the previous valid research payload and verifier feedback when those artifacts exist.
 
-Non-retryable research and verifier failures still fail closed immediately. Malformed output, banned scoring/trust/reservation keys, action mismatches, missing required blocks, invalid evidence shapes, unsafe URLs, and same-source verifier evidence do not become retry feedback.
+Non-retryable research and verifier failures still fail closed immediately. Malformed output, banned scoring/trust/reservation keys, action mismatches, missing required blocks, invalid evidence shapes, unsafe URLs, and same-domain verifier evidence marked as `sourceClass: "independent"` do not become retry feedback.
 
 Per-attempt artifacts are preserved for debugging:
 
@@ -233,6 +237,7 @@ Verifier feedback artifacts contain the failed field or change, verdict, verifie
       "path": "newAlternative.evidence.country_code",
       "field": "country_code",
       "verdict": "inconclusive",
+      "sourceClass": "legal",
       "sourceUrl": "https://example.com/source",
       "sourceTitle": "Source title",
       "accessedDate": "2026-06-11",
