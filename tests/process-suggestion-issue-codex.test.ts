@@ -153,6 +153,82 @@ exit 65
   return shimPath;
 }
 
+function writeParserFeedbackResearchStage(
+  tempDir: string,
+  recordPath: string,
+  issueNumber: number,
+): string {
+  const shimPath = join(tempDir, "stage-research-parser-feedback.sh");
+  const successPath = join(tempDir, "stage-research-success.stdout");
+  const feedbackPath = join(tempDir, "stage-research-parser-feedback.json");
+  const countPath = join(tempDir, "stage-research-count.txt");
+
+  writeFileSync(successPath, researchStdout(issueNumber), "utf8");
+  writeFileSync(
+    feedbackPath,
+    `${JSON.stringify(
+      {
+        issueNumber,
+        action: "new_alternative",
+        retryable: true,
+        error:
+          "newAlternative.sources is missing a source entry for field tags",
+        field: "tags",
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+
+  writeFileSync(
+    shimPath,
+    `#!/usr/bin/env bash
+set -u
+count=0
+if [[ -f ${JSON.stringify(countPath)} ]]; then
+  count="$(cat ${JSON.stringify(countPath)})"
+fi
+count=$((count + 1))
+printf '%s\\n' "$count" > ${JSON.stringify(countPath)}
+
+{
+  printf 'CALL\\n'
+  printf 'STAGE=research\\n'
+  for arg in "$@"; do
+      printf '%s\\n' "$arg"
+  done
+} >> ${JSON.stringify(recordPath)}
+
+parser_feedback_file=""
+previous=""
+for arg in "$@"; do
+  if [[ "$previous" == "--parser-feedback-output-file" ]]; then
+    parser_feedback_file="$arg"
+  fi
+  previous="$arg"
+done
+
+if [[ "$count" -eq 2 ]]; then
+  if [[ -n "$parser_feedback_file" ]]; then
+    cp ${JSON.stringify(feedbackPath)} "$parser_feedback_file"
+  fi
+  printf 'Parse error: newAlternative.sources is missing a source entry for field tags\\n' >&2
+  printf 'EXIT=65\\n' >> ${JSON.stringify(recordPath)}
+  exit 65
+fi
+
+printf 'EXIT=0\\n' >> ${JSON.stringify(recordPath)}
+cat ${JSON.stringify(successPath)}
+exit 0
+`,
+    "utf8",
+  );
+  chmodSync(shimPath, 0o755);
+
+  return shimPath;
+}
+
 type StageCall = {
   stage: string;
   args: string[];
@@ -392,6 +468,84 @@ describe("process-suggestion-issue-codex orchestrator", () => {
       expect(parsed.writes_applied).toBe(true);
       expect(parsed.outcome).toBe("applied");
       expect(parsed.issueNumber).toBe(issueNumber);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("passes per-attempt raw output paths to research and verify stages", () => {
+    const tempDir = makeProjectTempDir("orchestrator-");
+    const issueNumber = 11013;
+    createdIssueNumbers.push(issueNumber);
+
+    try {
+      const recordPath = join(tempDir, "stage-calls.log");
+      writeFileSync(recordPath, "", "utf8");
+
+      const classifyCmd = writeFakeStage(
+        tempDir,
+        "classify",
+        recordPath,
+        classificationStdout("catalog_fact_correction", issueNumber),
+        0,
+      );
+      const researchCmd = writeFakeStage(
+        tempDir,
+        "research",
+        recordPath,
+        researchStdout(issueNumber),
+        0,
+      );
+      const snapshotCmd = writeFakeStage(
+        tempDir,
+        "snapshot",
+        recordPath,
+        snapshotStdout(),
+        0,
+      );
+      const verifyCmd = writeFakeStage(
+        tempDir,
+        "verify",
+        recordPath,
+        verifiedStdout(issueNumber),
+        0,
+      );
+      const applyCmd = writeFakeStage(
+        tempDir,
+        "apply",
+        recordPath,
+        outcomeStdout(issueNumber),
+        0,
+      );
+      const finalizeCmd = writeFakeStage(
+        tempDir,
+        "finalize",
+        recordPath,
+        "",
+        0,
+      );
+
+      const result = runOrchestrator([String(issueNumber)], {
+        EUROALT_RESEARCH_ISSUE_CMD: `bash ${classifyCmd}`,
+        EUROALT_CATALOG_SNAPSHOT_CMD: `bash ${snapshotCmd}`,
+        EUROALT_RESEARCH_FACT_CMD: `bash ${researchCmd}`,
+        EUROALT_VERIFY_FACT_CMD: `bash ${verifyCmd}`,
+        EUROALT_APPLY_VERIFIED_CMD: `bash ${applyCmd}`,
+        EUROALT_FINALIZE_ISSUE_CMD: `bash ${finalizeCmd}`,
+      });
+
+      expect(result.status).toBe(0);
+
+      const calls = readStageCalls(recordPath);
+      const researchCall = calls.find((c) => c.stage === "research");
+      const verifyCall = calls.find((c) => c.stage === "verify");
+
+      expect(
+        argValue(researchCall?.args ?? [], "--raw-output-file") ?? "",
+      ).toMatch(/tmp\/issues\/11013\/research-raw-1\.txt$/);
+      expect(
+        argValue(verifyCall?.args ?? [], "--raw-output-file") ?? "",
+      ).toMatch(/tmp\/issues\/11013\/verify-raw-1\.txt$/);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
@@ -769,6 +923,118 @@ describe("process-suggestion-issue-codex orchestrator", () => {
       expect(parsed.classification).toBe("catalog_fact_correction");
       expect(parsed.writes_applied).toBe(false);
       expect(parsed.outcome).toBe("dry_run_applied");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("retries research parser feedback with remaining attempt budget", () => {
+    const tempDir = makeProjectTempDir("orchestrator-");
+    const issueNumber = 11014;
+    createdIssueNumbers.push(issueNumber);
+
+    try {
+      const recordPath = join(tempDir, "stage-calls.log");
+      writeFileSync(recordPath, "", "utf8");
+
+      const classifyCmd = writeFakeStage(
+        tempDir,
+        "classify",
+        recordPath,
+        classificationStdout("new_alternative", issueNumber),
+        0,
+      );
+      const researchCmd = writeParserFeedbackResearchStage(
+        tempDir,
+        recordPath,
+        issueNumber,
+      );
+      const snapshotCmd = writeFakeStage(
+        tempDir,
+        "snapshot",
+        recordPath,
+        snapshotStdout(),
+        0,
+      );
+      const verifyCmd = writeFeedbackVerifierStage(
+        tempDir,
+        recordPath,
+        issueNumber,
+        { failuresBeforeSuccess: 1 },
+      );
+      const applyCmd = writeFakeStage(
+        tempDir,
+        "apply",
+        recordPath,
+        outcomeStdout(issueNumber),
+        0,
+      );
+      const finalizeCmd = writeFakeStage(
+        tempDir,
+        "finalize",
+        recordPath,
+        "",
+        0,
+      );
+
+      const result = runOrchestrator(
+        [String(issueNumber), "--max-verification-attempts", "3"],
+        {
+          EUROALT_RESEARCH_ISSUE_CMD: `bash ${classifyCmd}`,
+          EUROALT_CATALOG_SNAPSHOT_CMD: `bash ${snapshotCmd}`,
+          EUROALT_RESEARCH_FACT_CMD: `bash ${researchCmd}`,
+          EUROALT_VERIFY_FACT_CMD: `bash ${verifyCmd}`,
+          EUROALT_APPLY_VERIFIED_CMD: `bash ${applyCmd}`,
+          EUROALT_FINALIZE_ISSUE_CMD: `bash ${finalizeCmd}`,
+        },
+      );
+
+      expect(result.status).toBe(0);
+
+      const calls = readStageCalls(recordPath);
+      expect(calls.map((c) => c.stage)).toEqual([
+        "classify",
+        "snapshot",
+        "research",
+        "verify",
+        "research",
+        "research",
+        "verify",
+        "apply",
+        "finalize",
+      ]);
+
+      const researchCalls = calls.filter((c) => c.stage === "research");
+      expect(researchCalls).toHaveLength(3);
+      expect(
+        argValue(researchCalls[1].args, "--parser-feedback-output-file"),
+      ).toMatch(/tmp\/issues\/11014\/research-parser-feedback-2\.json$/);
+      expect(
+        argValue(researchCalls[2].args, "--previous-research-file"),
+      ).toMatch(/tmp\/issues\/11014\/research-1\.json$/);
+      expect(
+        argValue(researchCalls[2].args, "--verification-feedback-file"),
+      ).toMatch(/tmp\/issues\/11014\/verification-feedback-1\.json$/);
+      expect(argValue(researchCalls[2].args, "--parser-feedback-file")).toMatch(
+        /tmp\/issues\/11014\/research-parser-feedback-2\.json$/,
+      );
+
+      const parserFeedbackPath = join(
+        projectDir,
+        "tmp/issues",
+        String(issueNumber),
+        "research-parser-feedback-2.json",
+      );
+      expect(existsSync(parserFeedbackPath)).toBe(true);
+      const parserFeedback = JSON.parse(
+        readFileSync(parserFeedbackPath, "utf8"),
+      );
+      expect(parserFeedback).toMatchObject({
+        retryable: true,
+        field: "tags",
+        error:
+          "newAlternative.sources is missing a source entry for field tags",
+      });
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

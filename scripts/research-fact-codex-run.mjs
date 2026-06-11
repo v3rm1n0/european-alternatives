@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -28,7 +29,10 @@ Options:
   --catalog-snapshot-file <path>  Load a pre-fetched catalog snapshot (categories, countries, entries, optional current entry).
   --previous-research-file <path> Load previous research JSON for a verification retry.
   --verification-feedback-file <path> Load verifier feedback JSON for a verification retry.
+  --parser-feedback-file <path>   Load researcher parser feedback JSON for a retry attempt.
   --mock-response-file <path>     Read researcher output from a file instead of invoking codex (test seam).
+  --raw-output-file <path>        Write raw researcher output before parsing.
+  --parser-feedback-output-file <path> Write retryable parser feedback for parser failures.
   --accessed-date <YYYY-MM-DD>    Override the accessed date that goes into the prompt and output.
   --dry-run                       Tag the emitted research payload as dry-run.
   --repo <owner/name>             Source repo for --issue-number (default TheMorpheus407/european-alternatives).
@@ -58,7 +62,10 @@ function parseArguments(argv) {
     catalogSnapshotFile: null,
     previousResearchFile: null,
     verificationFeedbackFile: null,
+    parserFeedbackFile: null,
     mockResponseFile: null,
+    rawOutputFile: null,
+    parserFeedbackOutputFile: null,
     accessedDate: null,
     dryRun: false,
     repo: "TheMorpheus407/european-alternatives",
@@ -87,7 +94,13 @@ function parseArguments(argv) {
       { flag: "--catalog-snapshot-file", key: "catalogSnapshotFile" },
       { flag: "--previous-research-file", key: "previousResearchFile" },
       { flag: "--verification-feedback-file", key: "verificationFeedbackFile" },
+      { flag: "--parser-feedback-file", key: "parserFeedbackFile" },
       { flag: "--mock-response-file", key: "mockResponseFile" },
+      { flag: "--raw-output-file", key: "rawOutputFile" },
+      {
+        flag: "--parser-feedback-output-file",
+        key: "parserFeedbackOutputFile",
+      },
       { flag: "--accessed-date", key: "accessedDate" },
       { flag: "--repo", key: "repo" },
     ];
@@ -380,6 +393,41 @@ function isUsageError(message) {
   );
 }
 
+async function writeTextArtifact(filePath, contents) {
+  await mkdir(dirname(filePath), { recursive: true });
+  await writeFile(filePath, contents, "utf8");
+}
+
+async function writeJsonArtifact(filePath, payload) {
+  await mkdir(dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+}
+
+function retryableParserFeedback(error, issue, classification) {
+  if (classification.action !== "new_alternative") {
+    return null;
+  }
+
+  const message =
+    error && typeof error.message === "string" ? error.message : String(error);
+  const match =
+    /^newAlternative\.sources is missing a source entry for field ([A-Za-z0-9_]+)$/.exec(
+      message,
+    );
+
+  if (match === null) {
+    return null;
+  }
+
+  return {
+    issueNumber: issue.number,
+    action: classification.action,
+    retryable: true,
+    error: message,
+    field: match[1],
+  };
+}
+
 async function main(argv) {
   let options;
 
@@ -436,6 +484,7 @@ async function main(argv) {
 
   let previousResearch;
   let verificationFeedback;
+  let parserFeedback;
 
   try {
     previousResearch = await loadOptionalJsonFile(
@@ -445,6 +494,10 @@ async function main(argv) {
     verificationFeedback = await loadOptionalJsonFile(
       options.verificationFeedbackFile,
       "--verification-feedback-file",
+    );
+    parserFeedback = await loadOptionalJsonFile(
+      options.parserFeedbackFile,
+      "--parser-feedback-file",
     );
   } catch (error) {
     process.stderr.write(`Invalid usage: ${error.message}\n`);
@@ -468,6 +521,7 @@ async function main(argv) {
             accessedDate: options.accessedDate ?? undefined,
             previousResearch,
             verificationFeedback,
+            parserFeedback,
           },
         );
       } else {
@@ -480,6 +534,7 @@ async function main(argv) {
             accessedDate: options.accessedDate ?? undefined,
             previousResearch,
             verificationFeedback,
+            parserFeedback,
           },
         );
       }
@@ -492,6 +547,15 @@ async function main(argv) {
     return FAIL_CLOSED;
   }
 
+  if (options.rawOutputFile !== null) {
+    try {
+      await writeTextArtifact(options.rawOutputFile, rawResponse);
+    } catch (error) {
+      process.stderr.write(`Raw output error: ${error.message}\n`);
+      return FAIL_CLOSED;
+    }
+  }
+
   let parsed;
 
   try {
@@ -499,6 +563,19 @@ async function main(argv) {
       accessedDate: options.accessedDate ?? undefined,
     });
   } catch (error) {
+    const feedback = retryableParserFeedback(error, issue, classification);
+
+    if (feedback !== null && options.parserFeedbackOutputFile !== null) {
+      try {
+        await writeJsonArtifact(options.parserFeedbackOutputFile, feedback);
+      } catch (writeError) {
+        process.stderr.write(
+          `Parser feedback error: ${writeError.message}\nParse error: ${error.message}\n`,
+        );
+        return FAIL_CLOSED;
+      }
+    }
+
     process.stderr.write(`Parse error: ${error.message}\n`);
     return FAIL_CLOSED;
   }

@@ -85,6 +85,8 @@ const FIELDS_REQUIRING_SOURCE = Object.freeze([
   "replaces_us",
 ]);
 
+const OPTIONAL_ARRAY_SOURCE_FIELDS = Object.freeze(["tags", "replaces_us"]);
+
 const PRICING_VALUES = Object.freeze(["free", "freemium", "paid"]);
 const OPEN_SOURCE_LEVELS = Object.freeze(["full", "partial", "none"]);
 const NEW_ALTERNATIVE_STATUSES = Object.freeze(["alternative", "us"]);
@@ -302,11 +304,16 @@ ${commentsBlock}`;
 }
 
 function retryContextBlock(options, mode) {
-  if (
-    !options ||
-    options.verificationFeedback === undefined ||
-    options.verificationFeedback === null
-  ) {
+  const hasVerificationFeedback =
+    options &&
+    options.verificationFeedback !== undefined &&
+    options.verificationFeedback !== null;
+  const hasParserFeedback =
+    options &&
+    options.parserFeedback !== undefined &&
+    options.parserFeedback !== null;
+
+  if (!hasVerificationFeedback && !hasParserFeedback) {
     return "";
   }
 
@@ -314,15 +321,20 @@ function retryContextBlock(options, mode) {
     options.previousResearch === undefined || options.previousResearch === null
       ? "(not provided)"
       : JSON.stringify(options.previousResearch, null, 2);
-  const verificationFeedbackJson = JSON.stringify(
-    options.verificationFeedback,
-    null,
-    2,
-  );
+  const verificationFeedbackJson = hasVerificationFeedback
+    ? JSON.stringify(options.verificationFeedback, null, 2)
+    : "(not provided)";
+  const parserFeedbackJson = hasParserFeedback
+    ? JSON.stringify(options.parserFeedback, null, 2)
+    : "(not provided)";
 
   const correctionInstruction =
     mode === "new_alternative"
-      ? "- Correct failed required fields using stronger source-backed research. For optional unsupported fields, set the field to null and omit/remove its source entry instead of reasserting a weak claim."
+      ? `- Correct failed required fields using stronger source-backed research.
+- For unsupported optional scalar fields, set the field to null and omit/remove its source entry instead of reasserting a weak claim.
+- For unsupported optional arrays (tags, replaces_us), set the array to [] and omit/remove its source entry.
+- If tags or replaces_us is non-empty, include a matching source entry such as newAlternative.sources.tags or newAlternative.sources.replaces_us.
+- Do not keep optional values from the previous attempt unless fresh source-backed research supports them and the matching source entry is present.`
       : "- Correct failed changes using stronger source-backed research. Remove unsupported fact-correction changes instead of repeating a weak or contradicted proposal.";
 
   return `\nRetry context from the previous verification attempt:
@@ -332,6 +344,9 @@ ${previousResearchJson}
 
 Structured verifier feedback JSON:
 ${verificationFeedbackJson}
+
+Structured researcher parser feedback JSON:
+${parserFeedbackJson}
 
 Retry instructions:
 ${correctionInstruction}
@@ -466,8 +481,9 @@ Country and jurisdiction rules:
 - Data center regions such as Netherlands, Washington, eu-west, or us-east are not headquarters or legal jurisdiction.
 
 Source requirements:
-- Every non-null source-backed field must have an entry in newAlternative.sources.
+- Every non-null source-backed field must have an entry in newAlternative.sources; for arrays, this applies only when the array is non-empty.
 - Source-backed fields are: name, description_en, description_de, country_code, website_url, pricing, is_open_source, open_source_level, source_code_url, self_hostable, founded_year, headquarters_city, license_text, categories, tags, replaces_us.
+- For tags and replaces_us, include a source entry only when the array is non-empty. If either optional array is unsupported or empty, emit [] and omit its source entry.
 - Do not add source entries for slug or status. Status is a catalog role inferred from the sourced legal/operator jurisdiction and product role.
 - Each source entry must be an object with url, title, and accessedDate.
 - url must be http or https. Prefer authoritative product, legal, documentation, pricing, repository, or company pages.
@@ -482,7 +498,7 @@ Before returning, perform this self-check:
 - status is "alternative" or "us". If the product is not a recommended alternative but is useful as a matrix comparison row, use "us" instead of rejecting or omitting it.
 - country_code is sourced as legal/operator jurisdiction and uses a valid country code from the list above.
 - categories uses only valid category IDs and exactly one primary category.
-- Every non-null source-backed field has a matching sources entry.
+- Every non-null scalar source-backed field and every non-empty source-backed array has a matching sources entry.
 - No forbidden scoring, reservation, worksheet, or deep research keys appear anywhere.
 - The sentinel block contains exactly one parseable JSON object and no markdown.
 
@@ -745,6 +761,14 @@ function validateSourceEntry(source, label) {
   }
 }
 
+function isEmptyOptionalSourceArray(field, value) {
+  return (
+    OPTIONAL_ARRAY_SOURCE_FIELDS.includes(field) &&
+    Array.isArray(value) &&
+    value.length === 0
+  );
+}
+
 function validateNewAlternativeBody(body, snapshot) {
   for (const field of NEW_ALTERNATIVE_REQUIRED_STRINGS) {
     if (!(field in body)) {
@@ -951,6 +975,13 @@ function validateNewAlternativeBody(body, snapshot) {
     const value = body[field];
 
     if (value === undefined || value === null) {
+      continue;
+    }
+
+    if (isEmptyOptionalSourceArray(field, value)) {
+      if (field in sources) {
+        validateSourceEntry(sources[field], `newAlternative.${field}`);
+      }
       continue;
     }
 

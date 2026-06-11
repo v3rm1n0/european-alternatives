@@ -56,6 +56,7 @@ type ResearchPromptOptions = {
   accessedDate?: string;
   previousResearch?: Record<string, unknown>;
   verificationFeedback?: Record<string, unknown>;
+  parserFeedback?: Record<string, unknown>;
 };
 
 type ResearcherModule = {
@@ -424,6 +425,82 @@ describe("research-fact-codex prompt builders", () => {
     expect(prompt).toMatch(/do not reassert|must not reassert|avoid reassert/i);
   });
 
+  it("new_alternative retry prompt tells the researcher how to handle optional arrays", async () => {
+    const { buildNewAlternativeResearchPrompt } = await loadResearcherModule();
+
+    const previousResearch = {
+      issueNumber: baselineIssue.number,
+      action: "new_alternative",
+      newAlternative: fullNewAlternativeBody(),
+    };
+    const verificationFeedback = {
+      issueNumber: baselineIssue.number,
+      action: "new_alternative",
+      retryable: true,
+      failedEvidence: [
+        {
+          path: "newAlternative.evidence.tags",
+          field: "tags",
+          verdict: "inconclusive",
+          sourceUrl: "https://registry.example/cryptee",
+          sourceTitle: "Registry profile",
+          auditQuote: "The page does not support the proposed tags.",
+          reasoning: "The optional array was copied without support.",
+        },
+      ],
+    };
+
+    const prompt = buildNewAlternativeResearchPrompt(
+      baselineIssue,
+      newAlternativeClassification,
+      baselineCatalogSnapshot,
+      {
+        accessedDate: "2026-05-27",
+        previousResearch,
+        verificationFeedback,
+      },
+    );
+
+    expect(prompt).toMatch(/optional arrays?[\s\S]*(tags|replaces_us)/i);
+    expect(prompt).toMatch(/unsupported optional arrays?[\s\S]*\[\]/i);
+    expect(prompt).toMatch(
+      /non-empty[\s\S]*(newAlternative\.sources\.(tags|replaces_us)|source entry)/i,
+    );
+    expect(prompt).toMatch(/do not (copy|keep)[\s\S]*previous attempt/i);
+  });
+
+  it("new_alternative retry prompt includes parser feedback without verifier feedback", async () => {
+    const { buildNewAlternativeResearchPrompt } = await loadResearcherModule();
+
+    const parserFeedback = {
+      issueNumber: baselineIssue.number,
+      action: "new_alternative",
+      retryable: true,
+      error: "newAlternative.sources is missing a source entry for field tags",
+      field: "tags",
+    };
+
+    const prompt = buildNewAlternativeResearchPrompt(
+      baselineIssue,
+      newAlternativeClassification,
+      baselineCatalogSnapshot,
+      {
+        accessedDate: "2026-05-27",
+        parserFeedback,
+      },
+    );
+
+    expect(prompt).toMatch(/researcher parser feedback/i);
+    expect(prompt).toContain(
+      '"error": "newAlternative.sources is missing a source entry for field tags"',
+    );
+    expect(prompt).toContain('"field": "tags"');
+    expect(prompt).toContain(
+      "Structured verifier feedback JSON:\n(not provided)",
+    );
+    expect(prompt).toMatch(/Retry instructions:/);
+  });
+
   it("fact_correction retry prompt includes failed change feedback and removal guidance", async () => {
     const { buildFactCorrectionResearchPrompt } = await loadResearcherModule();
 
@@ -549,6 +626,32 @@ describe("research-fact-codex parser — happy paths", () => {
     expect(body.country_code).toBe("ee");
     expect(body.website_url).toBe("https://crypt.ee");
     expect(Array.isArray(body.categories)).toBe(true);
+  });
+
+  it("parses empty optional arrays without requiring matching source entries", async () => {
+    const { parseResearchResponse } = await loadResearcherModule();
+
+    const payload = newAlternativePayload({
+      tags: [],
+      replaces_us: [],
+    });
+    const body = (payload as { newAlternative: Record<string, unknown> })
+      .newAlternative;
+    const sources = body.sources as Record<string, unknown>;
+    delete sources.tags;
+    delete sources.replaces_us;
+
+    const result = parseResearchResponse(
+      modelResponse(payload),
+      newAlternativeClassification,
+      baselineCatalogSnapshot,
+    );
+
+    const parsedBody = result.newAlternative as Record<string, unknown>;
+    expect(parsedBody.tags).toEqual([]);
+    expect(parsedBody.replaces_us).toEqual([]);
+    expect(parsedBody.sources).not.toHaveProperty("tags");
+    expect(parsedBody.sources).not.toHaveProperty("replaces_us");
   });
 
   it("parses a catalog_fact_correction payload with a single change", async () => {
@@ -1133,6 +1236,106 @@ describe("research-fact-codex runner CLI", () => {
     }
   });
 
+  it("writes raw researcher output before failing a missing-source parse", () => {
+    const tempDir = makeProjectTempDir("research-fact-codex-");
+
+    try {
+      const invalidPayload = newAlternativePayload();
+      const body = (
+        invalidPayload as { newAlternative: Record<string, unknown> }
+      ).newAlternative;
+      const sources = body.sources as Record<string, unknown>;
+      delete sources.tags;
+      const rawResponse = modelResponse(invalidPayload);
+      const inputs = writeRunnerInputs(
+        tempDir,
+        baselineIssue,
+        newAlternativeClassification,
+        baselineCatalogSnapshot,
+        rawResponse,
+      );
+      const rawOutputPath = join(tempDir, "research-raw.txt");
+      const parserFeedbackPath = join(tempDir, "research-parser-feedback.json");
+
+      const result = runRunner([
+        "--issue-file",
+        inputs.issuePath,
+        "--classification-file",
+        inputs.classificationPath,
+        "--catalog-snapshot-file",
+        inputs.snapshotPath,
+        "--mock-response-file",
+        inputs.mockResponsePath,
+        "--raw-output-file",
+        rawOutputPath,
+        "--parser-feedback-output-file",
+        parserFeedbackPath,
+      ]);
+
+      expect(result.status).toBe(65);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toMatch(
+        /newAlternative\.sources is missing a source entry for field tags/,
+      );
+      expect(readFileSync(rawOutputPath, "utf8")).toBe(rawResponse);
+
+      const feedback = parseJsonObject(
+        readFileSync(parserFeedbackPath, "utf8"),
+      );
+      expect(feedback).toMatchObject({
+        issueNumber: baselineIssue.number,
+        action: "new_alternative",
+        retryable: true,
+        error:
+          "newAlternative.sources is missing a source entry for field tags",
+      });
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not write parser feedback for non-retryable banned-key failures", () => {
+    const tempDir = makeProjectTempDir("research-fact-codex-");
+
+    try {
+      const rawResponse = modelResponse(
+        newAlternativePayload({ trust_score: 80 }),
+      );
+      const inputs = writeRunnerInputs(
+        tempDir,
+        baselineIssue,
+        newAlternativeClassification,
+        baselineCatalogSnapshot,
+        rawResponse,
+      );
+      const rawOutputPath = join(tempDir, "research-raw.txt");
+      const parserFeedbackPath = join(tempDir, "research-parser-feedback.json");
+
+      const result = runRunner([
+        "--issue-file",
+        inputs.issuePath,
+        "--classification-file",
+        inputs.classificationPath,
+        "--catalog-snapshot-file",
+        inputs.snapshotPath,
+        "--mock-response-file",
+        inputs.mockResponsePath,
+        "--raw-output-file",
+        rawOutputPath,
+        "--parser-feedback-output-file",
+        parserFeedbackPath,
+      ]);
+
+      expect(result.status).toBe(65);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toMatch(/trust_score|banned/i);
+      expect(readFileSync(rawOutputPath, "utf8")).toBe(rawResponse);
+      expect(existsSync(parserFeedbackPath)).toBe(false);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("fails closed when classification action is unsupported_or_unclear", () => {
     const tempDir = makeProjectTempDir("research-fact-codex-");
 
@@ -1530,6 +1733,66 @@ describe("research-fact-codex bash entrypoint", () => {
 
         expect(result.status).toBe(0);
         expect(parseJsonObject(result.stdout).action).toBe("new_alternative");
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(!scriptExists)(
+    "passes --raw-output-file and parser feedback flags through to the runner",
+    () => {
+      const tempDir = makeProjectTempDir("research-fact-codex-");
+
+      try {
+        const invalidPayload = newAlternativePayload();
+        const body = (
+          invalidPayload as { newAlternative: Record<string, unknown> }
+        ).newAlternative;
+        const sources = body.sources as Record<string, unknown>;
+        delete sources.tags;
+        const rawResponse = modelResponse(invalidPayload);
+        const inputs = writeRunnerInputs(
+          tempDir,
+          baselineIssue,
+          newAlternativeClassification,
+          baselineCatalogSnapshot,
+          rawResponse,
+        );
+        const rawOutputPath = join(tempDir, "research-raw.txt");
+        const parserFeedbackPath = join(
+          tempDir,
+          "research-parser-feedback.json",
+        );
+
+        const result = spawnSync(
+          "bash",
+          [
+            researcherShellScriptPath,
+            "--issue-file",
+            inputs.issuePath,
+            "--classification-file",
+            inputs.classificationPath,
+            "--catalog-snapshot-file",
+            inputs.snapshotPath,
+            "--mock-response-file",
+            inputs.mockResponsePath,
+            "--raw-output-file",
+            rawOutputPath,
+            "--parser-feedback-output-file",
+            parserFeedbackPath,
+          ],
+          { cwd: projectDir, encoding: "utf8" },
+        );
+
+        expect(result.status).toBe(65);
+        expect(readFileSync(rawOutputPath, "utf8")).toBe(rawResponse);
+        const feedback = parseJsonObject(
+          readFileSync(parserFeedbackPath, "utf8"),
+        );
+        expect(feedback.error).toBe(
+          "newAlternative.sources is missing a source entry for field tags",
+        );
       } finally {
         rmSync(tempDir, { recursive: true, force: true });
       }

@@ -1681,6 +1681,56 @@ describe("verify-fact-codex runner CLI", () => {
     }
   });
 
+  it("writes raw verifier output before failing with retry feedback", () => {
+    const tempDir = makeProjectTempDir("verify-fact-codex-");
+
+    try {
+      const rawResponse = modelResponse(
+        newAlternativeVerifierPayload({
+          country_code: evidenceRecord({
+            verdict: "inconclusive",
+            sourceUrl: "https://e-estonia.com/country",
+            sourceTitle: "e-Estonia company profile",
+            auditQuote: "The page names the product but not the legal entity.",
+            reasoning:
+              "The source does not independently confirm operator jurisdiction.",
+          }),
+        }),
+      );
+      const inputs = writeRunnerInputs(
+        tempDir,
+        baselineIssue,
+        newAlternativeClassification,
+        researcherNewAlternativePayload(),
+        rawResponse,
+      );
+      const rawOutputPath = join(tempDir, "verify-raw.txt");
+      const feedbackPath = join(tempDir, "verification-feedback.json");
+
+      const result = runRunner([
+        "--issue-file",
+        inputs.issuePath,
+        "--classification-file",
+        inputs.classificationPath,
+        "--research-file",
+        inputs.researchPath,
+        "--mock-response-file",
+        inputs.mockResponsePath,
+        "--raw-output-file",
+        rawOutputPath,
+        "--feedback-output-file",
+        feedbackPath,
+      ]);
+
+      expect(result.status).toBe(65);
+      expect(result.stdout).toBe("");
+      expect(readFileSync(rawOutputPath, "utf8")).toBe(rawResponse);
+      expect(existsSync(feedbackPath)).toBe(true);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   const sourceInaccessibleQuoteCases: Array<{
     name: string;
     prepare: (record: Record<string, unknown>) => void;
@@ -2275,6 +2325,62 @@ describe("verify-fact-codex bash entrypoint", () => {
             },
           ],
         });
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(!scriptExists)(
+    "passes --raw-output-file through to the runner",
+    () => {
+      const tempDir = makeProjectTempDir("verify-fact-codex-");
+
+      try {
+        const rawResponse = modelResponse(
+          newAlternativeVerifierPayload({
+            country_code: evidenceRecord({
+              verdict: "inconclusive",
+              sourceUrl: "https://e-estonia.com/country",
+              sourceTitle: "e-Estonia company profile",
+              auditQuote:
+                "The page names the product but not the legal entity.",
+            }),
+          }),
+        );
+        const inputs = writeRunnerInputs(
+          tempDir,
+          baselineIssue,
+          newAlternativeClassification,
+          researcherNewAlternativePayload(),
+          rawResponse,
+        );
+        const rawOutputPath = join(tempDir, "verify-raw.txt");
+        const feedbackPath = join(tempDir, "verification-feedback.json");
+
+        const result = spawnSync(
+          "bash",
+          [
+            verifierShellScriptPath,
+            "--issue-file",
+            inputs.issuePath,
+            "--classification-file",
+            inputs.classificationPath,
+            "--research-file",
+            inputs.researchPath,
+            "--mock-response-file",
+            inputs.mockResponsePath,
+            "--raw-output-file",
+            rawOutputPath,
+            "--feedback-output-file",
+            feedbackPath,
+          ],
+          { cwd: projectDir, encoding: "utf8" },
+        );
+
+        expect(result.status).toBe(65);
+        expect(readFileSync(rawOutputPath, "utf8")).toBe(rawResponse);
+        expect(existsSync(feedbackPath)).toBe(true);
       } finally {
         rmSync(tempDir, { recursive: true, force: true });
       }

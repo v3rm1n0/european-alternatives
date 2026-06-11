@@ -202,15 +202,22 @@ Verification attempts are capped by `--max-verification-attempts <n>`, or by `EU
 
 If the verifier returns a structurally valid review with a non-supporting verdict (`inconclusive`, `contradicts`, or `source-inaccessible`), the pipeline writes structured feedback and retries research while the attempt budget remains. The next research pass receives the original issue, the catalog snapshot, the previous research payload, and the verifier feedback. Apply/finalize only run after a verifier pass where every required evidence record is `supports`.
 
-Non-retryable verifier failures still fail closed immediately. Malformed verifier output, banned scoring/trust/reservation keys, action mismatches, missing required blocks, invalid evidence shapes, and same-source verifier evidence do not become retry feedback.
+If research parsing fails with retryable parser feedback, such as a missing source entry for a source-backed field, the pipeline writes `research-parser-feedback-<attempt>.json` and retries research while the attempt budget remains. The next research pass receives the parser feedback, plus the previous valid research payload and verifier feedback when those artifacts exist.
+
+Non-retryable research and verifier failures still fail closed immediately. Malformed output, banned scoring/trust/reservation keys, action mismatches, missing required blocks, invalid evidence shapes, unsafe URLs, and same-source verifier evidence do not become retry feedback.
 
 Per-attempt artifacts are preserved for debugging:
 
 - `research-1.json`, `research-2.json`, ...
+- `research-raw-1.txt`, `research-raw-2.txt`, ...
 - `research-fact-1.stderr.log`, `research-fact-2.stderr.log`, ...
+- `research-parser-feedback-1.json`, `research-parser-feedback-2.json`, ...
 - `verified-action-1.json`, `verified-action-2.json`, ...
+- `verify-raw-1.txt`, `verify-raw-2.txt`, ...
 - `verify-fact-1.stderr.log`, `verify-fact-2.stderr.log`, ...
 - `verification-feedback-1.json`, `verification-feedback-2.json`, ...
+
+Raw `research-raw-*.txt` and `verify-raw-*.txt` files contain the model response before parsing. They are local diagnostics under `tmp/issues/<issue-number>/`; parsed JSON artifacts remain the compatibility inputs for downstream stages.
 
 The latest selected research payload is also copied to `research.json`. The successful verified action is copied to `verified-action.json` before apply/finalize so existing downstream scripts can keep using the compatibility filenames.
 
@@ -249,7 +256,9 @@ For fact-correction issues, feedback entries also identify the failed change wit
 
 Verifier failures that do not produce feedback keep the existing `verify_failed_rc_<code>` outcome and are not retried.
 
-When running the stage scripts directly instead of the orchestrator, `scripts/verify-fact-codex.sh` accepts `--feedback-output-file <path>` to write retry feedback, and `scripts/research-fact-codex.sh` accepts `--previous-research-file <path>` plus `--verification-feedback-file <path>` to build a corrective retry prompt.
+When running the stage scripts directly instead of the orchestrator, `scripts/verify-fact-codex.sh` accepts `--raw-output-file <path>` to preserve raw verifier output and `--feedback-output-file <path>` to write retry feedback. `scripts/research-fact-codex.sh` accepts `--raw-output-file <path>` to preserve raw researcher output, `--parser-feedback-output-file <path>` to write retryable parser feedback, and `--previous-research-file <path>`, `--verification-feedback-file <path>`, and `--parser-feedback-file <path>` to build a corrective retry prompt.
+
+For new-alternative research payloads, every non-null scalar source-backed field and every non-empty source-backed array must have a matching source entry. Optional arrays such as `tags` and `replaces_us` should be `[]` with no source entry when unsupported or empty.
 
 ### Matrix Research Selector
 

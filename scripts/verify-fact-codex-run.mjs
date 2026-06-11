@@ -31,6 +31,7 @@ Options:
   --research-file <path>          Read stage-2 research payload JSON from a file (required).
   --research-json <json>          Inline stage-2 research payload JSON string.
   --mock-response-file <path>     Read verifier output from a file instead of invoking codex (test seam).
+  --raw-output-file <path>        Write raw verifier output before parsing.
   --feedback-output-file <path>   Write structured retry feedback for non-supporting verdicts.
   --accessed-date <YYYY-MM-DD>    Override the accessed date used in the prompt and the verified_action.
   --dry-run                       Tag the emitted verified_action as dry-run.
@@ -61,6 +62,7 @@ function parseArguments(argv) {
     researchFile: null,
     researchJson: null,
     mockResponseFile: null,
+    rawOutputFile: null,
     feedbackOutputFile: null,
     accessedDate: null,
     dryRun: false,
@@ -90,6 +92,7 @@ function parseArguments(argv) {
       { flag: "--research-file", key: "researchFile" },
       { flag: "--research-json", key: "researchJson" },
       { flag: "--mock-response-file", key: "mockResponseFile" },
+      { flag: "--raw-output-file", key: "rawOutputFile" },
       { flag: "--feedback-output-file", key: "feedbackOutputFile" },
       { flag: "--accessed-date", key: "accessedDate" },
       { flag: "--repo", key: "repo" },
@@ -393,6 +396,11 @@ async function writeFeedbackArtifact(filePath, feedback) {
   await writeFile(filePath, `${JSON.stringify(feedback, null, 2)}\n`, "utf8");
 }
 
+async function writeRawOutputArtifact(filePath, rawResponse) {
+  await mkdir(dirname(filePath), { recursive: true });
+  await writeFile(filePath, rawResponse, "utf8");
+}
+
 async function main(argv) {
   let options;
 
@@ -477,6 +485,15 @@ async function main(argv) {
   } catch (error) {
     process.stderr.write(`Verifier error: ${error.message}\n`);
     return FAIL_CLOSED;
+  }
+
+  if (options.rawOutputFile !== null) {
+    try {
+      await writeRawOutputArtifact(options.rawOutputFile, rawResponse);
+    } catch (error) {
+      process.stderr.write(`Raw output error: ${error.message}\n`);
+      return FAIL_CLOSED;
+    }
   }
 
   let parsed;

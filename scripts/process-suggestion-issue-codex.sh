@@ -233,12 +233,16 @@ fi
 ATTEMPT=1
 PREVIOUS_RESEARCH_FILE=""
 PREVIOUS_FEEDBACK_FILE=""
+PREVIOUS_PARSER_FEEDBACK_FILE=""
 VERIFICATION_SUCCEEDED=0
 
 while [[ "$ATTEMPT" -le "$MAX_VERIFICATION_ATTEMPTS" ]]; do
     ATTEMPT_RESEARCH_FILE="$ISSUE_DIR/research-${ATTEMPT}.json"
+    ATTEMPT_RESEARCH_RAW_FILE="$ISSUE_DIR/research-raw-${ATTEMPT}.txt"
     ATTEMPT_RESEARCH_STDERR="$ISSUE_DIR/research-fact-${ATTEMPT}.stderr.log"
+    ATTEMPT_PARSER_FEEDBACK_FILE="$ISSUE_DIR/research-parser-feedback-${ATTEMPT}.json"
     ATTEMPT_VERIFIED_FILE="$ISSUE_DIR/verified-action-${ATTEMPT}.json"
+    ATTEMPT_VERIFY_RAW_FILE="$ISSUE_DIR/verify-raw-${ATTEMPT}.txt"
     ATTEMPT_VERIFY_STDERR="$ISSUE_DIR/verify-fact-${ATTEMPT}.stderr.log"
     ATTEMPT_FEEDBACK_FILE="$ISSUE_DIR/verification-feedback-${ATTEMPT}.json"
 
@@ -248,14 +252,29 @@ while [[ "$ATTEMPT" -le "$MAX_VERIFICATION_ATTEMPTS" ]]; do
         --catalog-snapshot-file "$SNAPSHOT_FILE"
         "${DRY_RUN_FLAG[@]}"
         --repo "$REPO"
+        --raw-output-file "$ATTEMPT_RESEARCH_RAW_FILE"
+        --parser-feedback-output-file "$ATTEMPT_PARSER_FEEDBACK_FILE"
     )
 
-    if [[ "$ATTEMPT" -gt 1 ]]; then
+    if [[ -n "$PREVIOUS_RESEARCH_FILE" ]]; then
         RESEARCH_ARGS+=(
             --previous-research-file "$PREVIOUS_RESEARCH_FILE"
+        )
+    fi
+
+    if [[ -n "$PREVIOUS_FEEDBACK_FILE" ]]; then
+        RESEARCH_ARGS+=(
             --verification-feedback-file "$PREVIOUS_FEEDBACK_FILE"
         )
     fi
+
+    if [[ -n "$PREVIOUS_PARSER_FEEDBACK_FILE" ]]; then
+        RESEARCH_ARGS+=(
+            --parser-feedback-file "$PREVIOUS_PARSER_FEEDBACK_FILE"
+        )
+    fi
+
+    rm -f "$ATTEMPT_RESEARCH_RAW_FILE" "$ATTEMPT_PARSER_FEEDBACK_FILE"
 
     echo "[issue #${ISSUE_NUMBER}] stage 2: research-fact attempt ${ATTEMPT}/${MAX_VERIFICATION_ATTEMPTS}"
     set +e
@@ -267,17 +286,22 @@ while [[ "$ATTEMPT" -le "$MAX_VERIFICATION_ATTEMPTS" ]]; do
     if [[ "$rc" -ne 0 ]]; then
         echo "[issue #${ISSUE_NUMBER}] research-fact failed rc=${rc}" >&2
         cat "$ATTEMPT_RESEARCH_STDERR" >&2 || true
+        if [[ -s "$ATTEMPT_PARSER_FEEDBACK_FILE" && "$ATTEMPT" -lt "$MAX_VERIFICATION_ATTEMPTS" ]]; then
+            PREVIOUS_PARSER_FEEDBACK_FILE="$ATTEMPT_PARSER_FEEDBACK_FILE"
+            ATTEMPT=$((ATTEMPT + 1))
+            continue
+        fi
         write_result "$CLASSIFICATION" "no" "research_failed_rc_${rc}"
         exit "$rc"
     fi
     cp "$ATTEMPT_RESEARCH_FILE" "$RESEARCH_FILE"
 
-    rm -f "$ATTEMPT_FEEDBACK_FILE"
+    rm -f "$ATTEMPT_FEEDBACK_FILE" "$ATTEMPT_VERIFY_RAW_FILE"
 
     echo "[issue #${ISSUE_NUMBER}] stage 3: verify-fact attempt ${ATTEMPT}/${MAX_VERIFICATION_ATTEMPTS}"
     set +e
     # shellcheck disable=SC2086
-    $VERIFY_FACT_CMD --issue-number "$ISSUE_NUMBER" --classification-file "$CLASSIFICATION_FILE" --research-file "$ATTEMPT_RESEARCH_FILE" "${DRY_RUN_FLAG[@]}" --repo "$REPO" --feedback-output-file "$ATTEMPT_FEEDBACK_FILE" > "$ATTEMPT_VERIFIED_FILE" 2> "$ATTEMPT_VERIFY_STDERR"
+    $VERIFY_FACT_CMD --issue-number "$ISSUE_NUMBER" --classification-file "$CLASSIFICATION_FILE" --research-file "$ATTEMPT_RESEARCH_FILE" "${DRY_RUN_FLAG[@]}" --repo "$REPO" --raw-output-file "$ATTEMPT_VERIFY_RAW_FILE" --feedback-output-file "$ATTEMPT_FEEDBACK_FILE" > "$ATTEMPT_VERIFIED_FILE" 2> "$ATTEMPT_VERIFY_STDERR"
     rc=$?
     set -e
     cp "$ATTEMPT_VERIFY_STDERR" "$ISSUE_DIR/verify-fact.stderr.log" 2>/dev/null || true
@@ -294,6 +318,7 @@ while [[ "$ATTEMPT" -le "$MAX_VERIFICATION_ATTEMPTS" ]]; do
         if [[ "$ATTEMPT" -lt "$MAX_VERIFICATION_ATTEMPTS" ]]; then
             PREVIOUS_RESEARCH_FILE="$ATTEMPT_RESEARCH_FILE"
             PREVIOUS_FEEDBACK_FILE="$ATTEMPT_FEEDBACK_FILE"
+            PREVIOUS_PARSER_FEEDBACK_FILE=""
             ATTEMPT=$((ATTEMPT + 1))
             continue
         fi
@@ -314,7 +339,11 @@ fi
 # Stage 4: apply -------------------------------------------------------------
 echo "[issue #${ISSUE_NUMBER}] stage 4: apply"
 if [[ "$CLASSIFICATION" == "new_alternative" ]]; then
-    APPLY_CMD="$APPLY_NEW_ALT_CMD"
+    if [[ -n "${EUROALT_APPLY_NEW_ALT_CMD:-}" || -z "${EUROALT_APPLY_VERIFIED_CMD:-}" ]]; then
+        APPLY_CMD="$APPLY_NEW_ALT_CMD"
+    else
+        APPLY_CMD="$APPLY_VERIFIED_CMD"
+    fi
 else
     APPLY_CMD="$APPLY_VERIFIED_CMD"
 fi
