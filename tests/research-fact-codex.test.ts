@@ -52,6 +52,12 @@ type CatalogSnapshot = {
   entry?: Record<string, unknown> | null;
 };
 
+type ResearchPromptOptions = {
+  accessedDate?: string;
+  previousResearch?: Record<string, unknown>;
+  verificationFeedback?: Record<string, unknown>;
+};
+
 type ResearcherModule = {
   RESEARCH_FACT_BEGIN_SENTINEL: string;
   RESEARCH_FACT_END_SENTINEL: string;
@@ -60,13 +66,13 @@ type ResearcherModule = {
     issue: IssueInput,
     classification: ClassificationInput,
     catalogSnapshot: CatalogSnapshot,
-    options?: { accessedDate?: string },
+    options?: ResearchPromptOptions,
   ) => string;
   buildFactCorrectionResearchPrompt: (
     issue: IssueInput,
     classification: ClassificationInput,
     currentEntry: Record<string, unknown>,
-    options?: { accessedDate?: string },
+    options?: ResearchPromptOptions,
   ) => string;
   parseResearchResponse: (
     rawResponse: string,
@@ -357,6 +363,115 @@ describe("research-fact-codex prompt builders", () => {
     expect(prompt).toMatch(/scoring.?metadata/i);
   });
 
+  it("new_alternative retry prompt includes previous research and structured verifier feedback", async () => {
+    const { buildNewAlternativeResearchPrompt } = await loadResearcherModule();
+
+    const previousResearch = {
+      issueNumber: baselineIssue.number,
+      action: "new_alternative",
+      newAlternative: fullNewAlternativeBody({
+        headquarters_city: "Tallinn",
+      }),
+    };
+    const verificationFeedback = {
+      issueNumber: baselineIssue.number,
+      action: "new_alternative",
+      retryable: true,
+      failedEvidence: [
+        {
+          path: "newAlternative.evidence.headquarters_city",
+          field: "headquarters_city",
+          verdict: "inconclusive",
+          sourceUrl: "https://registry.example/cryptee",
+          sourceTitle: "Registry profile",
+          auditQuote: "The registry page does not list a headquarters city.",
+          reasoning: "The previous source did not support this optional field.",
+        },
+      ],
+    };
+
+    const prompt = buildNewAlternativeResearchPrompt(
+      baselineIssue,
+      newAlternativeClassification,
+      baselineCatalogSnapshot,
+      {
+        accessedDate: "2026-05-27",
+        previousResearch,
+        verificationFeedback,
+      },
+    );
+
+    expect(prompt).toMatch(/previous research/i);
+    expect(prompt).toMatch(/verifier feedback|verification feedback/i);
+    expect(prompt).toContain(
+      '"path": "newAlternative.evidence.headquarters_city"',
+    );
+    expect(prompt).toContain('"verdict": "inconclusive"');
+    expect(prompt).toContain('"sourceUrl": "https://registry.example/cryptee"');
+    expect(prompt).toContain('"sourceTitle": "Registry profile"');
+    expect(prompt).toContain(
+      '"auditQuote": "The registry page does not list a headquarters city."',
+    );
+    expect(prompt).toContain(
+      '"reasoning": "The previous source did not support this optional field."',
+    );
+    expect(prompt).toMatch(
+      /optional[\s\S]*(null|omit)|(?:null|omit)[\s\S]*optional/i,
+    );
+    expect(prompt).toMatch(
+      /sources?[\s\S]*(omit|remove)|(?:omit|remove)[\s\S]*sources?/i,
+    );
+    expect(prompt).toMatch(/do not reassert|must not reassert|avoid reassert/i);
+  });
+
+  it("fact_correction retry prompt includes failed change feedback and removal guidance", async () => {
+    const { buildFactCorrectionResearchPrompt } = await loadResearcherModule();
+
+    const previousResearch = factCorrectionPayload();
+    const verificationFeedback = {
+      issueNumber: baselineIssue.number,
+      action: "catalog_fact_correction",
+      retryable: true,
+      failedEvidence: [
+        {
+          path: "factCorrection.evidence[0]",
+          changeIndex: 0,
+          table: "catalog_entries",
+          column: "country_code",
+          proposedValue: "fr",
+          verdict: "contradicts",
+          sourceUrl: "https://registry.example/element",
+          sourceTitle: "Element registry profile",
+          auditQuote: "Element is not registered in France.",
+          reasoning: "The proposed country correction is contradicted.",
+        },
+      ],
+    };
+
+    const prompt = buildFactCorrectionResearchPrompt(
+      baselineIssue,
+      factCorrectionClassification,
+      baselineCurrentEntry,
+      {
+        accessedDate: "2026-05-27",
+        previousResearch,
+        verificationFeedback,
+      },
+    );
+
+    expect(prompt).toMatch(/previous research/i);
+    expect(prompt).toMatch(/verifier feedback|verification feedback/i);
+    expect(prompt).toContain('"path": "factCorrection.evidence[0]"');
+    expect(prompt).toContain('"changeIndex": 0');
+    expect(prompt).toContain('"table": "catalog_entries"');
+    expect(prompt).toContain('"column": "country_code"');
+    expect(prompt).toContain('"proposedValue": "fr"');
+    expect(prompt).toContain('"verdict": "contradicts"');
+    expect(prompt).toMatch(/remove unsupported fact-correction changes/i);
+    expect(prompt).toMatch(/classified action and target entry are fixed/i);
+    expect(prompt).toMatch(/do not reassert/i);
+  });
+
   it("fact_correction prompt embeds the current entry snapshot and forbids slug changes", async () => {
     const { buildFactCorrectionResearchPrompt } = await loadResearcherModule();
 
@@ -587,7 +702,10 @@ describe("research-fact-codex parser — source-presence enforcement", () => {
     const body = (payload as { newAlternative: Record<string, unknown> })
       .newAlternative;
     const sources = body.sources as Record<string, Record<string, unknown>>;
-    sources.country_code = { url: "ftp://example.com", accessedDate: "2026-05-27" };
+    sources.country_code = {
+      url: "ftp://example.com",
+      accessedDate: "2026-05-27",
+    };
 
     expect(() =>
       parseResearchResponse(
@@ -711,9 +829,7 @@ describe("research-fact-codex parser — validation rules mirrored from add-alte
       parseResearchResponse(
         modelResponse(
           newAlternativePayload({
-            categories: [
-              { category_id: "cloud-storage", is_primary: false },
-            ],
+            categories: [{ category_id: "cloud-storage", is_primary: false }],
           }),
         ),
         newAlternativeClassification,
@@ -785,9 +901,9 @@ describe("research-fact-codex parser — validation rules mirrored from add-alte
       baselineCatalogSnapshot,
     );
 
-    expect(
-      (parsed.newAlternative as Record<string, unknown>).status,
-    ).toBe("us");
+    expect((parsed.newAlternative as Record<string, unknown>).status).toBe(
+      "us",
+    );
   });
 
   it("rejects an unsupported newAlternative status", async () => {
@@ -1348,16 +1464,91 @@ describe("research-fact-codex bash entrypoint", () => {
     },
   );
 
-  it.skipIf(!scriptExists)("exits with usage error code 64 on unknown options", () => {
-    const result = spawnSync(
-      "bash",
-      [researcherShellScriptPath, "--no-such-flag"],
-      { cwd: projectDir, encoding: "utf8" },
-    );
+  it.skipIf(!scriptExists)(
+    "accepts previous research and verifier feedback files for retry attempts",
+    () => {
+      const tempDir = makeProjectTempDir("research-fact-codex-");
 
-    expect(result.status).toBe(64);
-    expect(result.stderr).toMatch(/unknown/i);
-  });
+      try {
+        const inputs = writeRunnerInputs(
+          tempDir,
+          baselineIssue,
+          newAlternativeClassification,
+          baselineCatalogSnapshot,
+          modelResponse(newAlternativePayload()),
+        );
+        const previousResearchPath = join(tempDir, "previous-research.json");
+        const feedbackPath = join(tempDir, "verification-feedback.json");
+        writeFileSync(
+          previousResearchPath,
+          JSON.stringify({
+            issueNumber: baselineIssue.number,
+            action: "new_alternative",
+            newAlternative: fullNewAlternativeBody(),
+          }),
+          "utf8",
+        );
+        writeFileSync(
+          feedbackPath,
+          JSON.stringify({
+            issueNumber: baselineIssue.number,
+            action: "new_alternative",
+            retryable: true,
+            failedEvidence: [
+              {
+                path: "newAlternative.evidence.country_code",
+                field: "country_code",
+                verdict: "inconclusive",
+                sourceUrl: "https://registry.example/cryptee",
+                sourceTitle: "Registry profile",
+                auditQuote: "Jurisdiction was not independently confirmed.",
+              },
+            ],
+          }),
+          "utf8",
+        );
+
+        const result = spawnSync(
+          "bash",
+          [
+            researcherShellScriptPath,
+            "--issue-file",
+            inputs.issuePath,
+            "--classification-file",
+            inputs.classificationPath,
+            "--catalog-snapshot-file",
+            inputs.snapshotPath,
+            "--previous-research-file",
+            previousResearchPath,
+            "--verification-feedback-file",
+            feedbackPath,
+            "--mock-response-file",
+            inputs.mockResponsePath,
+          ],
+          { cwd: projectDir, encoding: "utf8" },
+        );
+
+        expect(result.status).toBe(0);
+        expect(parseJsonObject(result.stdout).action).toBe("new_alternative");
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(!scriptExists)(
+    "exits with usage error code 64 on unknown options",
+    () => {
+      const result = spawnSync(
+        "bash",
+        [researcherShellScriptPath, "--no-such-flag"],
+        { cwd: projectDir, encoding: "utf8" },
+      );
+
+      expect(result.status).toBe(64);
+      expect(result.stderr).toMatch(/unknown/i);
+    },
+  );
 });
 
 describe("research-fact-codex command lookup", () => {
@@ -1549,9 +1740,7 @@ describe("research-fact-codex parser — coverage gaps", () => {
 
     expect(() =>
       parseResearchResponse(
-        modelResponse(
-          newAlternativePayload({ website_url: "http://[::1]/" }),
-        ),
+        modelResponse(newAlternativePayload({ website_url: "http://[::1]/" })),
         newAlternativeClassification,
         baselineCatalogSnapshot,
       ),
@@ -1601,7 +1790,11 @@ describe("research-fact-codex parser — coverage gaps", () => {
   it("rejects a sentinel block containing a non-object JSON value (array)", async () => {
     const { parseResearchResponse } = await loadResearcherModule();
 
-    const arrayBlock = [beginSentinel, JSON.stringify([1, 2, 3]), endSentinel].join("\n");
+    const arrayBlock = [
+      beginSentinel,
+      JSON.stringify([1, 2, 3]),
+      endSentinel,
+    ].join("\n");
 
     expect(() =>
       parseResearchResponse(

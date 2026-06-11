@@ -203,10 +203,7 @@ function isPublicHostUrl(value) {
   }
 
   if (!host.includes(".") && !host.includes(":")) {
-    if (
-      /^(0x[0-9a-f]+|0[0-7]+|\d+)$/iu.test(host) ||
-      /^[\d.]+$/u.test(host)
-    ) {
+    if (/^(0x[0-9a-f]+|0[0-7]+|\d+)$/iu.test(host) || /^[\d.]+$/u.test(host)) {
       return false;
     }
   }
@@ -253,8 +250,7 @@ function formatComment(comment, index) {
       : "unknown";
   const createdAt =
     comment && typeof comment.createdAt === "string" ? comment.createdAt : "";
-  const body =
-    comment && typeof comment.body === "string" ? comment.body : "";
+  const body = comment && typeof comment.body === "string" ? comment.body : "";
   const header = createdAt
     ? `Comment ${index + 1} by @${author} (${createdAt}):`
     : `Comment ${index + 1} by @${author}:`;
@@ -290,7 +286,9 @@ function issueContextBlock(issue) {
   const commentsBlock =
     comments.length === 0
       ? "No comments."
-      : comments.map((comment, index) => formatComment(comment, index)).join("\n\n");
+      : comments
+          .map((comment, index) => formatComment(comment, index))
+          .join("\n\n");
 
   return `- number: ${issue.number}
 - title: ${title}
@@ -301,6 +299,46 @@ ${body}
 
 Issue comments:
 ${commentsBlock}`;
+}
+
+function retryContextBlock(options, mode) {
+  if (
+    !options ||
+    options.verificationFeedback === undefined ||
+    options.verificationFeedback === null
+  ) {
+    return "";
+  }
+
+  const previousResearchJson =
+    options.previousResearch === undefined || options.previousResearch === null
+      ? "(not provided)"
+      : JSON.stringify(options.previousResearch, null, 2);
+  const verificationFeedbackJson = JSON.stringify(
+    options.verificationFeedback,
+    null,
+    2,
+  );
+
+  const correctionInstruction =
+    mode === "new_alternative"
+      ? "- Correct failed required fields using stronger source-backed research. For optional unsupported fields, set the field to null and omit/remove its source entry instead of reasserting a weak claim."
+      : "- Correct failed changes using stronger source-backed research. Remove unsupported fact-correction changes instead of repeating a weak or contradicted proposal.";
+
+  return `\nRetry context from the previous verification attempt:
+
+Previous research JSON:
+${previousResearchJson}
+
+Structured verifier feedback JSON:
+${verificationFeedbackJson}
+
+Retry instructions:
+${correctionInstruction}
+- Use the verifier feedback only as diagnostic review context; do fresh source-backed research and expect independent re-verification.
+- Do not reassert failed facts or changes unless you can support them with stronger sources.
+- The classified action and target entry are fixed. Do not change them.
+- Forbidden scoring, trust, reservation, worksheet, and deep-research keys remain forbidden.\n`;
 }
 
 export function buildNewAlternativeResearchPrompt(
@@ -322,7 +360,9 @@ export function buildNewAlternativeResearchPrompt(
   }
 
   const snapshot = assertPlainObject(catalogSnapshot, "catalogSnapshot");
-  const categories = Array.isArray(snapshot.categories) ? snapshot.categories : [];
+  const categories = Array.isArray(snapshot.categories)
+    ? snapshot.categories
+    : [];
   const countries = Array.isArray(snapshot.countries) ? snapshot.countries : [];
   const entries = Array.isArray(snapshot.entries) ? snapshot.entries : [];
 
@@ -333,19 +373,27 @@ export function buildNewAlternativeResearchPrompt(
       : "(not provided)";
 
   const accessedDate =
-    typeof options.accessedDate === "string" && options.accessedDate.trim() !== ""
+    typeof options.accessedDate === "string" &&
+    options.accessedDate.trim() !== ""
       ? options.accessedDate.trim()
       : new Date().toISOString().slice(0, 10);
 
   const categoryList = categories
-    .map((category) => `- ${String(category.id)}${category.name ? ` (${category.name})` : ""}`)
+    .map(
+      (category) =>
+        `- ${String(category.id)}${category.name ? ` (${category.name})` : ""}`,
+    )
     .join("\n");
   const countryList = countries
-    .map((country) => `- ${String(country.code)}${country.name ? ` (${country.name})` : ""}`)
+    .map(
+      (country) =>
+        `- ${String(country.code)}${country.name ? ` (${country.name})` : ""}`,
+    )
     .join("\n");
   const slugList = entries
     .map((entry) => `- ${String(entry.slug)} (${String(entry.name)})`)
     .join("\n");
+  const retryContext = retryContextBlock(options, "new_alternative");
 
   return `You are the stage-2 web researcher for the European Alternatives catalog suggestion pipeline.
 
@@ -387,6 +435,7 @@ ${countryList || "(none)"}
 
 Existing entry slugs (do not propose a slug that already exists):
 ${slugList || "(none)"}
+${retryContext}
 
 Required catalog facts:
 - slug: required string. Lowercase alphanumeric with dots, dashes, or underscores; matches /^[a-z0-9][a-z0-9._-]{0,98}[a-z0-9]$/.
@@ -505,11 +554,13 @@ export function buildFactCorrectionResearchPrompt(
         : "(unknown)";
 
   const accessedDate =
-    typeof options.accessedDate === "string" && options.accessedDate.trim() !== ""
+    typeof options.accessedDate === "string" &&
+    options.accessedDate.trim() !== ""
       ? options.accessedDate.trim()
       : new Date().toISOString().slice(0, 10);
 
   const currentEntryJson = JSON.stringify(entry, null, 2);
+  const retryContext = retryContextBlock(options, "catalog_fact_correction");
 
   return `You are the stage-2 web researcher for the European Alternatives catalog suggestion pipeline.
 
@@ -545,6 +596,7 @@ Classification (from stage 1):
 
 Current entry snapshot (what the catalog says today):
 ${currentEntryJson}
+${retryContext}
 
 Allowed change targets (anything outside this list will be rejected):
 - catalog_entries columns: description_en, description_de, country_code, website_url, pricing, is_open_source, open_source_level, source_code_url, self_hostable, founded_year, headquarters_city, license_text. (NOT slug, NOT name, NOT logo_path.)
@@ -738,7 +790,10 @@ function validateNewAlternativeBody(body, snapshot) {
   }
 
   if (body.source_code_url !== undefined && body.source_code_url !== null) {
-    if (!isHttpUrl(body.source_code_url) || !isPublicHostUrl(body.source_code_url)) {
+    if (
+      !isHttpUrl(body.source_code_url) ||
+      !isPublicHostUrl(body.source_code_url)
+    ) {
       throw new Error(
         `newAlternative.source_code_url ${JSON.stringify(body.source_code_url)} must be an https URL with a public host`,
       );
@@ -756,7 +811,10 @@ function validateNewAlternativeBody(body, snapshot) {
   const isOpenSource = body.is_open_source ?? null;
   const openSourceLevel = body.open_source_level ?? null;
 
-  if (openSourceLevel !== null && !OPEN_SOURCE_LEVELS.includes(openSourceLevel)) {
+  if (
+    openSourceLevel !== null &&
+    !OPEN_SOURCE_LEVELS.includes(openSourceLevel)
+  ) {
     throw new Error(
       `newAlternative.open_source_level must be one of ${OPEN_SOURCE_LEVELS.join(", ")} or null`,
     );
@@ -831,7 +889,9 @@ function validateNewAlternativeBody(body, snapshot) {
       throw new Error("newAlternative.categories entries must be objects");
     }
     if (typeof category.category_id !== "string") {
-      throw new Error("newAlternative.categories[i].category_id must be a string");
+      throw new Error(
+        "newAlternative.categories[i].category_id must be a string",
+      );
     }
     if (!knownCategoryIds.has(category.category_id)) {
       throw new Error(
@@ -856,8 +916,8 @@ function validateNewAlternativeBody(body, snapshot) {
   }
 
   const knownCountryCodes = new Set(
-    (Array.isArray(snapshot.countries) ? snapshot.countries : []).map((country) =>
-      String(country.code).toLowerCase(),
+    (Array.isArray(snapshot.countries) ? snapshot.countries : []).map(
+      (country) => String(country.code).toLowerCase(),
     ),
   );
 
@@ -905,8 +965,13 @@ function validateNewAlternativeBody(body, snapshot) {
 }
 
 function validateFactCorrectionBody(body, snapshot) {
-  if (typeof body.targetEntrySlug !== "string" || body.targetEntrySlug.trim() === "") {
-    throw new Error("factCorrection.targetEntrySlug must be a non-empty string");
+  if (
+    typeof body.targetEntrySlug !== "string" ||
+    body.targetEntrySlug.trim() === ""
+  ) {
+    throw new Error(
+      "factCorrection.targetEntrySlug must be a non-empty string",
+    );
   }
 
   const targetSlug = body.targetEntrySlug.trim();
@@ -944,10 +1009,16 @@ function validateFactCorrectionBody(body, snapshot) {
   }
 
   body.changes.forEach((change, index) => {
-    const record = assertPlainObject(change, `factCorrection.changes[${index}]`);
+    const record = assertPlainObject(
+      change,
+      `factCorrection.changes[${index}]`,
+    );
     const table = record.table;
 
-    if (typeof table !== "string" || !CORRECTION_ALLOWED_TABLES.includes(table)) {
+    if (
+      typeof table !== "string" ||
+      !CORRECTION_ALLOWED_TABLES.includes(table)
+    ) {
       throw new Error(
         `factCorrection.changes[${index}].table ${JSON.stringify(table)} is not in the allowlist (allowed: ${CORRECTION_ALLOWED_TABLES.join(", ")})`,
       );
@@ -956,7 +1027,10 @@ function validateFactCorrectionBody(body, snapshot) {
     if (table === "catalog_entries") {
       const column = record.column;
 
-      if (typeof column !== "string" || !CATALOG_ENTRIES_ALLOWED_COLUMNS.includes(column)) {
+      if (
+        typeof column !== "string" ||
+        !CATALOG_ENTRIES_ALLOWED_COLUMNS.includes(column)
+      ) {
         throw new Error(
           `factCorrection.changes[${index}].column ${JSON.stringify(column)} is not in the catalog_entries allowlist (allowed: ${CATALOG_ENTRIES_ALLOWED_COLUMNS.join(", ")})`,
         );
@@ -1033,7 +1107,10 @@ export function parseResearchResponse(
       );
     }
 
-    const body = assertPlainObject(payloadRecord.newAlternative, "newAlternative");
+    const body = assertPlainObject(
+      payloadRecord.newAlternative,
+      "newAlternative",
+    );
 
     validateNewAlternativeBody(body, snapshotRecord);
 
@@ -1051,7 +1128,10 @@ export function parseResearchResponse(
       );
     }
 
-    const body = assertPlainObject(payloadRecord.factCorrection, "factCorrection");
+    const body = assertPlainObject(
+      payloadRecord.factCorrection,
+      "factCorrection",
+    );
 
     validateFactCorrectionBody(body, snapshotRecord);
 

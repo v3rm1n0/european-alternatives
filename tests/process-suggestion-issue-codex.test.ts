@@ -64,10 +64,105 @@ exit ${exitCode}
   return shimPath;
 }
 
+function writeFeedbackVerifierStage(
+  tempDir: string,
+  recordPath: string,
+  issueNumber: number,
+  options: { failuresBeforeSuccess: number },
+): string {
+  const shimPath = join(tempDir, "stage-verify-feedback.sh");
+  const successPath = join(tempDir, "stage-verify-success.stdout");
+  const feedbackPath = join(tempDir, "stage-verify-feedback.json");
+  const countPath = join(tempDir, "stage-verify-count.txt");
+
+  writeFileSync(successPath, verifiedStdout(issueNumber), "utf8");
+  writeFileSync(
+    feedbackPath,
+    `${JSON.stringify(
+      {
+        issueNumber,
+        action: "catalog_fact_correction",
+        retryable: true,
+        failedEvidence: [
+          {
+            path: "factCorrection.evidence[0]",
+            changeIndex: 0,
+            table: "catalog_entries",
+            column: "country_code",
+            proposedValue: "fr",
+            verdict: "inconclusive",
+            sourceUrl: "https://societe.com/element-fr",
+            sourceTitle: "Element - Societe.com",
+            auditQuote: "Element SAS, France.",
+            reasoning:
+              "The verifier could not confirm the proposed jurisdiction.",
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+
+  writeFileSync(
+    shimPath,
+    `#!/usr/bin/env bash
+set -u
+count=0
+if [[ -f ${JSON.stringify(countPath)} ]]; then
+  count="$(cat ${JSON.stringify(countPath)})"
+fi
+count=$((count + 1))
+printf '%s\\n' "$count" > ${JSON.stringify(countPath)}
+
+{
+  printf 'CALL\\n'
+  printf 'STAGE=verify\\n'
+  for arg in "$@"; do
+      printf '%s\\n' "$arg"
+  done
+} >> ${JSON.stringify(recordPath)}
+
+feedback_file=""
+previous=""
+for arg in "$@"; do
+  if [[ "$previous" == "--feedback-output-file" ]]; then
+    feedback_file="$arg"
+  fi
+  previous="$arg"
+done
+
+if [[ ${String(options.failuresBeforeSuccess)} -ge 0 && "$count" -gt ${String(options.failuresBeforeSuccess)} ]]; then
+  printf 'EXIT=0\\n' >> ${JSON.stringify(recordPath)}
+  cat ${JSON.stringify(successPath)}
+  exit 0
+fi
+
+if [[ -n "$feedback_file" ]]; then
+  cp ${JSON.stringify(feedbackPath)} "$feedback_file"
+fi
+printf 'verifier feedback written for attempt %s\\n' "$count" >&2
+printf 'EXIT=65\\n' >> ${JSON.stringify(recordPath)}
+exit 65
+`,
+    "utf8",
+  );
+  chmodSync(shimPath, 0o755);
+
+  return shimPath;
+}
+
 type StageCall = {
   stage: string;
   args: string[];
 };
+
+function argValue(args: string[], flag: string): string | undefined {
+  const index = args.indexOf(flag);
+
+  return index === -1 ? undefined : args[index + 1];
+}
 
 function readStageCalls(recordPath: string): StageCall[] {
   if (!existsSync(recordPath)) {
@@ -551,6 +646,322 @@ describe("process-suggestion-issue-codex orchestrator", () => {
     }
   });
 
+  it("retries research with verifier feedback after a retryable verification failure, then applies only after verification succeeds", () => {
+    const tempDir = makeProjectTempDir("orchestrator-");
+    const issueNumber = 11010;
+    createdIssueNumbers.push(issueNumber);
+
+    try {
+      const recordPath = join(tempDir, "stage-calls.log");
+      writeFileSync(recordPath, "", "utf8");
+
+      const classifyCmd = writeFakeStage(
+        tempDir,
+        "classify",
+        recordPath,
+        classificationStdout("catalog_fact_correction", issueNumber),
+        0,
+      );
+      const researchCmd = writeFakeStage(
+        tempDir,
+        "research",
+        recordPath,
+        researchStdout(issueNumber),
+        0,
+      );
+      const snapshotCmd = writeFakeStage(
+        tempDir,
+        "snapshot",
+        recordPath,
+        snapshotStdout(),
+        0,
+      );
+      const verifyCmd = writeFeedbackVerifierStage(
+        tempDir,
+        recordPath,
+        issueNumber,
+        { failuresBeforeSuccess: 1 },
+      );
+      const applyCmd = writeFakeStage(
+        tempDir,
+        "apply",
+        recordPath,
+        outcomeStdout(issueNumber),
+        0,
+      );
+      const finalizeCmd = writeFakeStage(
+        tempDir,
+        "finalize",
+        recordPath,
+        "",
+        0,
+      );
+
+      const result = runOrchestrator([String(issueNumber), "--dry-run"], {
+        EUROALT_MAX_VERIFICATION_ATTEMPTS: "2",
+        EUROALT_RESEARCH_ISSUE_CMD: `bash ${classifyCmd}`,
+        EUROALT_CATALOG_SNAPSHOT_CMD: `bash ${snapshotCmd}`,
+        EUROALT_RESEARCH_FACT_CMD: `bash ${researchCmd}`,
+        EUROALT_VERIFY_FACT_CMD: `bash ${verifyCmd}`,
+        EUROALT_APPLY_VERIFIED_CMD: `bash ${applyCmd}`,
+        EUROALT_FINALIZE_ISSUE_CMD: `bash ${finalizeCmd}`,
+      });
+
+      expect(result.status).toBe(0);
+
+      const calls = readStageCalls(recordPath);
+      expect(calls.map((c) => c.stage)).toEqual([
+        "classify",
+        "snapshot",
+        "research",
+        "verify",
+        "research",
+        "verify",
+        "apply",
+        "finalize",
+      ]);
+
+      const researchCalls = calls.filter((c) => c.stage === "research");
+      expect(researchCalls).toHaveLength(2);
+      expect(researchCalls[0].args).not.toContain("--previous-research-file");
+      expect(researchCalls[0].args).not.toContain(
+        "--verification-feedback-file",
+      );
+      expect(
+        argValue(researchCalls[1].args, "--previous-research-file"),
+      ).toMatch(/tmp\/issues\/11010\/research-1\.json$/);
+      expect(
+        argValue(researchCalls[1].args, "--verification-feedback-file"),
+      ).toMatch(/tmp\/issues\/11010\/verification-feedback-1\.json$/);
+
+      const verifyCalls = calls.filter((c) => c.stage === "verify");
+      expect(verifyCalls).toHaveLength(2);
+      expect(argValue(verifyCalls[0].args, "--feedback-output-file")).toMatch(
+        /tmp\/issues\/11010\/verification-feedback-1\.json$/,
+      );
+      expect(argValue(verifyCalls[1].args, "--feedback-output-file")).toMatch(
+        /tmp\/issues\/11010\/verification-feedback-2\.json$/,
+      );
+
+      for (const call of calls) {
+        if (call.stage !== "snapshot") {
+          expect(call.args).toContain("--dry-run");
+        }
+      }
+
+      expect(
+        existsSync(
+          join(
+            projectDir,
+            "tmp/issues",
+            String(issueNumber),
+            "verification-feedback-1.json",
+          ),
+        ),
+      ).toBe(true);
+
+      const parsed = JSON.parse(
+        readFileSync(
+          join(projectDir, "tmp/issues", String(issueNumber), "result.json"),
+          "utf8",
+        ),
+      );
+      expect(parsed.classification).toBe("catalog_fact_correction");
+      expect(parsed.writes_applied).toBe(false);
+      expect(parsed.outcome).toBe("dry_run_applied");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("exhausts retryable verifier feedback at the configured attempt limit without applying or finalizing", () => {
+    const tempDir = makeProjectTempDir("orchestrator-");
+    const issueNumber = 11011;
+    createdIssueNumbers.push(issueNumber);
+
+    try {
+      const recordPath = join(tempDir, "stage-calls.log");
+      writeFileSync(recordPath, "", "utf8");
+
+      const classifyCmd = writeFakeStage(
+        tempDir,
+        "classify",
+        recordPath,
+        classificationStdout("catalog_fact_correction", issueNumber),
+        0,
+      );
+      const researchCmd = writeFakeStage(
+        tempDir,
+        "research",
+        recordPath,
+        researchStdout(issueNumber),
+        0,
+      );
+      const snapshotCmd = writeFakeStage(
+        tempDir,
+        "snapshot",
+        recordPath,
+        snapshotStdout(),
+        0,
+      );
+      const verifyCmd = writeFeedbackVerifierStage(
+        tempDir,
+        recordPath,
+        issueNumber,
+        { failuresBeforeSuccess: -1 },
+      );
+      const applyCmd = writeFakeStage(
+        tempDir,
+        "apply",
+        recordPath,
+        outcomeStdout(issueNumber),
+        0,
+      );
+      const finalizeCmd = writeFakeStage(
+        tempDir,
+        "finalize",
+        recordPath,
+        "",
+        0,
+      );
+
+      const result = runOrchestrator(
+        [String(issueNumber), "--max-verification-attempts", "2"],
+        {
+          EUROALT_RESEARCH_ISSUE_CMD: `bash ${classifyCmd}`,
+          EUROALT_CATALOG_SNAPSHOT_CMD: `bash ${snapshotCmd}`,
+          EUROALT_RESEARCH_FACT_CMD: `bash ${researchCmd}`,
+          EUROALT_VERIFY_FACT_CMD: `bash ${verifyCmd}`,
+          EUROALT_APPLY_VERIFIED_CMD: `bash ${applyCmd}`,
+          EUROALT_FINALIZE_ISSUE_CMD: `bash ${finalizeCmd}`,
+        },
+      );
+
+      expect(result.status).toBe(65);
+
+      const calls = readStageCalls(recordPath);
+      expect(calls.map((c) => c.stage)).toEqual([
+        "classify",
+        "snapshot",
+        "research",
+        "verify",
+        "research",
+        "verify",
+      ]);
+      expect(calls.map((c) => c.stage)).not.toContain("apply");
+      expect(calls.map((c) => c.stage)).not.toContain("finalize");
+
+      const parsed = JSON.parse(
+        readFileSync(
+          join(projectDir, "tmp/issues", String(issueNumber), "result.json"),
+          "utf8",
+        ),
+      );
+      expect(parsed.classification).toBe("catalog_fact_correction");
+      expect(parsed.writes_applied).toBe(false);
+      expect(parsed.outcome).toBe("verification_retries_exhausted");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not retry verifier failures that do not produce current feedback", () => {
+    const tempDir = makeProjectTempDir("orchestrator-");
+    const issueNumber = 11012;
+    createdIssueNumbers.push(issueNumber);
+
+    try {
+      const recordPath = join(tempDir, "stage-calls.log");
+      writeFileSync(recordPath, "", "utf8");
+
+      const classifyCmd = writeFakeStage(
+        tempDir,
+        "classify",
+        recordPath,
+        classificationStdout("catalog_fact_correction", issueNumber),
+        0,
+      );
+      const researchCmd = writeFakeStage(
+        tempDir,
+        "research",
+        recordPath,
+        researchStdout(issueNumber),
+        0,
+      );
+      const snapshotCmd = writeFakeStage(
+        tempDir,
+        "snapshot",
+        recordPath,
+        snapshotStdout(),
+        0,
+      );
+      const verifyCmd = writeFakeStage(tempDir, "verify", recordPath, "", 65);
+      const applyCmd = writeFakeStage(
+        tempDir,
+        "apply",
+        recordPath,
+        outcomeStdout(issueNumber),
+        0,
+      );
+      const finalizeCmd = writeFakeStage(
+        tempDir,
+        "finalize",
+        recordPath,
+        "",
+        0,
+      );
+      const issueDir = join(projectDir, "tmp/issues", String(issueNumber));
+      mkdirSync(issueDir, { recursive: true });
+      const staleFeedbackPath = join(issueDir, "verification-feedback-1.json");
+      writeFileSync(
+        staleFeedbackPath,
+        JSON.stringify({
+          retryable: true,
+          failedEvidence: [{ verdict: "inconclusive" }],
+        }),
+        "utf8",
+      );
+
+      const result = runOrchestrator([String(issueNumber)], {
+        EUROALT_MAX_VERIFICATION_ATTEMPTS: "3",
+        EUROALT_RESEARCH_ISSUE_CMD: `bash ${classifyCmd}`,
+        EUROALT_CATALOG_SNAPSHOT_CMD: `bash ${snapshotCmd}`,
+        EUROALT_RESEARCH_FACT_CMD: `bash ${researchCmd}`,
+        EUROALT_VERIFY_FACT_CMD: `bash ${verifyCmd}`,
+        EUROALT_APPLY_VERIFIED_CMD: `bash ${applyCmd}`,
+        EUROALT_FINALIZE_ISSUE_CMD: `bash ${finalizeCmd}`,
+      });
+
+      expect(result.status).toBe(65);
+
+      const calls = readStageCalls(recordPath);
+      expect(calls.map((c) => c.stage)).toEqual([
+        "classify",
+        "snapshot",
+        "research",
+        "verify",
+      ]);
+
+      const verifyCalls = calls.filter((c) => c.stage === "verify");
+      expect(argValue(verifyCalls[0].args, "--feedback-output-file")).toMatch(
+        /tmp\/issues\/11012\/verification-feedback-1\.json$/,
+      );
+      expect(existsSync(staleFeedbackPath)).toBe(false);
+
+      const parsed = JSON.parse(
+        readFileSync(
+          join(projectDir, "tmp/issues", String(issueNumber), "result.json"),
+          "utf8",
+        ),
+      );
+      expect(parsed.classification).toBe("catalog_fact_correction");
+      expect(parsed.writes_applied).toBe(false);
+      expect(parsed.outcome).toBe("verify_failed_rc_65");
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("exits 64 on --help and prints usage", () => {
     const result = runOrchestrator(["--help"], {});
     expect(result.status).toBe(0);
@@ -680,7 +1091,13 @@ describe("process-suggestion-issue-codex orchestrator", () => {
       expect(result.status).toBe(3);
 
       const stages = readStageCalls(recordPath).map((c) => c.stage);
-      expect(stages).toEqual(["classify", "snapshot", "research", "verify", "apply"]);
+      expect(stages).toEqual([
+        "classify",
+        "snapshot",
+        "research",
+        "verify",
+        "apply",
+      ]);
       expect(stages).not.toContain("finalize");
 
       const resultJsonPath = join(

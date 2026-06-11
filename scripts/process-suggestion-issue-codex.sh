@@ -8,7 +8,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 usage() {
     cat <<'USAGE'
 Usage:
-  scripts/process-suggestion-issue-codex.sh <issue-number> [--dry-run] [--repo <owner/name>]
+  scripts/process-suggestion-issue-codex.sh <issue-number> [--dry-run] [--repo <owner/name>] [--max-verification-attempts <n>]
   scripts/process-suggestion-issue-codex.sh --help
 
 Single-issue orchestrator for the European Alternatives Codex catalog
@@ -35,6 +35,9 @@ surface classification and write outcome in its own log stream.
 `--dry-run` propagates to every stage. With `--dry-run`, no GitHub
 mutations and no DB writes occur.
 
+`--max-verification-attempts` caps total research/verify attempts. The
+default is EUROALT_MAX_VERIFICATION_ATTEMPTS or 2.
+
 Environment overrides (test seams):
   EUROALT_REPO                  Default --repo target.
   EUROALT_RESEARCH_ISSUE_CMD    Override stage-1 classifier command.
@@ -44,12 +47,15 @@ Environment overrides (test seams):
   EUROALT_APPLY_VERIFIED_CMD    Override stage-4 apply command (fact-correction).
   EUROALT_APPLY_NEW_ALT_CMD     Override stage-4 apply command (new_alternative).
   EUROALT_FINALIZE_ISSUE_CMD    Override stage-5 finalizer command.
+  EUROALT_MAX_VERIFICATION_ATTEMPTS
+                                Default total verification attempts.
 USAGE
 }
 
 REPO="${EUROALT_REPO:-TheMorpheus407/european-alternatives}"
 DRY_RUN=0
 ISSUE_NUMBER=""
+MAX_VERIFICATION_ATTEMPTS="${EUROALT_MAX_VERIFICATION_ATTEMPTS:-2}"
 
 while [[ "$#" -gt 0 ]]; do
     case "$1" in
@@ -71,6 +77,18 @@ while [[ "$#" -gt 0 ]]; do
             ;;
         --repo=*)
             REPO="${1#--repo=}"
+            shift
+            ;;
+        --max-verification-attempts)
+            if [[ "$#" -lt 2 ]]; then
+                echo "error: --max-verification-attempts requires a value" >&2
+                exit 64
+            fi
+            MAX_VERIFICATION_ATTEMPTS="$2"
+            shift 2
+            ;;
+        --max-verification-attempts=*)
+            MAX_VERIFICATION_ATTEMPTS="${1#--max-verification-attempts=}"
             shift
             ;;
         --)
@@ -95,6 +113,11 @@ done
 
 if [[ -z "$ISSUE_NUMBER" ]]; then
     echo "error: provide an issue number" >&2
+    exit 64
+fi
+
+if [[ ! "$MAX_VERIFICATION_ATTEMPTS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "error: --max-verification-attempts must be a positive integer" >&2
     exit 64
 fi
 
@@ -206,32 +229,86 @@ if [[ "$rc" -ne 0 ]]; then
     printf '{}\n' > "$SNAPSHOT_FILE"
 fi
 
-# Stage 2: research ----------------------------------------------------------
-echo "[issue #${ISSUE_NUMBER}] stage 2: research-fact"
-set +e
-# shellcheck disable=SC2086
-$RESEARCH_FACT_CMD --issue-number "$ISSUE_NUMBER" --classification-file "$CLASSIFICATION_FILE" --catalog-snapshot-file "$SNAPSHOT_FILE" "${DRY_RUN_FLAG[@]}" --repo "$REPO" > "$RESEARCH_FILE" 2> "$ISSUE_DIR/research-fact.stderr.log"
-rc=$?
-set -e
-if [[ "$rc" -ne 0 ]]; then
-    echo "[issue #${ISSUE_NUMBER}] research-fact failed rc=${rc}" >&2
-    cat "$ISSUE_DIR/research-fact.stderr.log" >&2 || true
-    write_result "$CLASSIFICATION" "no" "research_failed_rc_${rc}"
-    exit "$rc"
-fi
+# Stage 2/3: research and verify with verifier-feedback retry ----------------
+ATTEMPT=1
+PREVIOUS_RESEARCH_FILE=""
+PREVIOUS_FEEDBACK_FILE=""
+VERIFICATION_SUCCEEDED=0
 
-# Stage 3: verify ------------------------------------------------------------
-echo "[issue #${ISSUE_NUMBER}] stage 3: verify-fact"
-set +e
-# shellcheck disable=SC2086
-$VERIFY_FACT_CMD --issue-number "$ISSUE_NUMBER" --classification-file "$CLASSIFICATION_FILE" --research-file "$RESEARCH_FILE" "${DRY_RUN_FLAG[@]}" --repo "$REPO" > "$VERIFIED_FILE" 2> "$ISSUE_DIR/verify-fact.stderr.log"
-rc=$?
-set -e
-if [[ "$rc" -ne 0 ]]; then
+while [[ "$ATTEMPT" -le "$MAX_VERIFICATION_ATTEMPTS" ]]; do
+    ATTEMPT_RESEARCH_FILE="$ISSUE_DIR/research-${ATTEMPT}.json"
+    ATTEMPT_RESEARCH_STDERR="$ISSUE_DIR/research-fact-${ATTEMPT}.stderr.log"
+    ATTEMPT_VERIFIED_FILE="$ISSUE_DIR/verified-action-${ATTEMPT}.json"
+    ATTEMPT_VERIFY_STDERR="$ISSUE_DIR/verify-fact-${ATTEMPT}.stderr.log"
+    ATTEMPT_FEEDBACK_FILE="$ISSUE_DIR/verification-feedback-${ATTEMPT}.json"
+
+    RESEARCH_ARGS=(
+        --issue-number "$ISSUE_NUMBER"
+        --classification-file "$CLASSIFICATION_FILE"
+        --catalog-snapshot-file "$SNAPSHOT_FILE"
+        "${DRY_RUN_FLAG[@]}"
+        --repo "$REPO"
+    )
+
+    if [[ "$ATTEMPT" -gt 1 ]]; then
+        RESEARCH_ARGS+=(
+            --previous-research-file "$PREVIOUS_RESEARCH_FILE"
+            --verification-feedback-file "$PREVIOUS_FEEDBACK_FILE"
+        )
+    fi
+
+    echo "[issue #${ISSUE_NUMBER}] stage 2: research-fact attempt ${ATTEMPT}/${MAX_VERIFICATION_ATTEMPTS}"
+    set +e
+    # shellcheck disable=SC2086
+    $RESEARCH_FACT_CMD "${RESEARCH_ARGS[@]}" > "$ATTEMPT_RESEARCH_FILE" 2> "$ATTEMPT_RESEARCH_STDERR"
+    rc=$?
+    set -e
+    cp "$ATTEMPT_RESEARCH_STDERR" "$ISSUE_DIR/research-fact.stderr.log" 2>/dev/null || true
+    if [[ "$rc" -ne 0 ]]; then
+        echo "[issue #${ISSUE_NUMBER}] research-fact failed rc=${rc}" >&2
+        cat "$ATTEMPT_RESEARCH_STDERR" >&2 || true
+        write_result "$CLASSIFICATION" "no" "research_failed_rc_${rc}"
+        exit "$rc"
+    fi
+    cp "$ATTEMPT_RESEARCH_FILE" "$RESEARCH_FILE"
+
+    rm -f "$ATTEMPT_FEEDBACK_FILE"
+
+    echo "[issue #${ISSUE_NUMBER}] stage 3: verify-fact attempt ${ATTEMPT}/${MAX_VERIFICATION_ATTEMPTS}"
+    set +e
+    # shellcheck disable=SC2086
+    $VERIFY_FACT_CMD --issue-number "$ISSUE_NUMBER" --classification-file "$CLASSIFICATION_FILE" --research-file "$ATTEMPT_RESEARCH_FILE" "${DRY_RUN_FLAG[@]}" --repo "$REPO" --feedback-output-file "$ATTEMPT_FEEDBACK_FILE" > "$ATTEMPT_VERIFIED_FILE" 2> "$ATTEMPT_VERIFY_STDERR"
+    rc=$?
+    set -e
+    cp "$ATTEMPT_VERIFY_STDERR" "$ISSUE_DIR/verify-fact.stderr.log" 2>/dev/null || true
+    if [[ "$rc" -eq 0 ]]; then
+        cp "$ATTEMPT_VERIFIED_FILE" "$VERIFIED_FILE"
+        VERIFICATION_SUCCEEDED=1
+        break
+    fi
+
     echo "[issue #${ISSUE_NUMBER}] verify-fact failed rc=${rc}" >&2
-    cat "$ISSUE_DIR/verify-fact.stderr.log" >&2 || true
+    cat "$ATTEMPT_VERIFY_STDERR" >&2 || true
+
+    if [[ -s "$ATTEMPT_FEEDBACK_FILE" ]]; then
+        if [[ "$ATTEMPT" -lt "$MAX_VERIFICATION_ATTEMPTS" ]]; then
+            PREVIOUS_RESEARCH_FILE="$ATTEMPT_RESEARCH_FILE"
+            PREVIOUS_FEEDBACK_FILE="$ATTEMPT_FEEDBACK_FILE"
+            ATTEMPT=$((ATTEMPT + 1))
+            continue
+        fi
+
+        write_result "$CLASSIFICATION" "no" "verification_retries_exhausted"
+        exit 65
+    fi
+
     write_result "$CLASSIFICATION" "no" "verify_failed_rc_${rc}"
     exit "$rc"
+done
+
+if [[ "$VERIFICATION_SUCCEEDED" -ne 1 ]]; then
+    write_result "$CLASSIFICATION" "no" "verification_retries_exhausted"
+    exit 65
 fi
 
 # Stage 4: apply -------------------------------------------------------------

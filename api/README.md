@@ -94,12 +94,12 @@ Fit filters are browsing aids for product-fit comparisons. They compose with the
 
 Public fact state is intentionally narrower than internal research state:
 
-| Internal state                                                                  | Public API/UI state                         |
-| ------------------------------------------------------------------------------- | ------------------------------------------- |
-| `verified`                                                                      | `verified` with the typed value and optional public source metadata |
+| Internal state                                                                                                          | Public API/UI state                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `verified`                                                                                                              | `verified` with the typed value and optional public source metadata                                 |
 | `researching` or `needs-deeper-research` on a fact that was previously verified (recheck in progress or recheck failed) | `verified` with the prior typed value and public source metadata, until a new verification succeeds |
-| `not-applicable`                                                                | `not_applicable` with `value: null`         |
-| Missing fact, `open`, `researching`, `rejected`, `needs-deeper-research` on a fact that was never verified | `unverified` / `Unverified` with `value: null` |
+| `not-applicable`                                                                                                        | `not_applicable` with `value: null`                                                                 |
+| Missing fact, `open`, `researching`, `rejected`, `needs-deeper-research` on a fact that was never verified              | `unverified` / `Unverified` with `value: null`                                                      |
 
 Public source links may be displayed in normal UI for verified facts. Audit quotes, raw researcher output, raw verifier output, and verifier notes are stored in `matrix_fact_attempts` or `matrix_fact_verifications` for review and audit only; the public matrix API does not return them. In short: public source links are UI-safe, while audit-only quotes and raw agent output are private review records.
 
@@ -173,18 +173,83 @@ Trust scores are dynamically computed on every API request by `api/catalog/scori
 
 ## Scripts Reference
 
-| Script                               | Language | Purpose                                                                                        |
-| ------------------------------------ | -------- | ---------------------------------------------------------------------------------------------- |
-| `scripts/db-schema.sql`              | SQL      | Full DDL for all 23 tables (run via `mysql` CLI)                                               |
-| `scripts/db-import.php`              | PHP      | Read `catalog.json`, seed catalog and matrix tables in a single transaction with advisory lock |
-| `scripts/matrix-research-select.php` | PHP      | Select and claim one open, retry, or stale verified matrix fact for the external research loop, with targeting and dry-run support |
-| `scripts/matrix-research-run.mjs`    | Node.js  | Run one `codex` or `claude` researcher against one selected fact, with mock response support   |
-| `scripts/matrix-verify-run.mjs`      | Node.js  | Run three independent `codex` or `claude` verifier slots for one pending attempt, with mock response support |
-| `scripts/matrix-research-persist.php` | PHP     | Persist one research attempt, optional verifier decision, audit rows, and final fact status    |
-| `scripts/matrix-research-loop.mjs`   | Node.js  | Repeatedly drive the one-fact matrix research pipeline until a limit fires or the queue is empty |
-| `scripts/score-deep-research-folder.sh` | Bash  | Autonomous batch runner that walks a folder of deep-research Markdown documents and scores each catalog entry through the five-stage pipeline (match → extract → verify → worksheet → DB write + API post-check) |
-| `scripts/db-backup.sh`               | Bash     | Backup the MySQL database                                                                      |
-| `scripts/db-restore.sh`              | Bash     | Restore a database backup                                                                      |
+| Script                                      | Language | Purpose                                                                                                                                                                                                          |
+| ------------------------------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scripts/db-schema.sql`                     | SQL      | Full DDL for all 23 tables (run via `mysql` CLI)                                                                                                                                                                 |
+| `scripts/db-import.php`                     | PHP      | Read `catalog.json`, seed catalog and matrix tables in a single transaction with advisory lock                                                                                                                   |
+| `scripts/matrix-research-select.php`        | PHP      | Select and claim one open, retry, or stale verified matrix fact for the external research loop, with targeting and dry-run support                                                                               |
+| `scripts/matrix-research-run.mjs`           | Node.js  | Run one `codex` or `claude` researcher against one selected fact, with mock response support                                                                                                                     |
+| `scripts/matrix-verify-run.mjs`             | Node.js  | Run three independent `codex` or `claude` verifier slots for one pending attempt, with mock response support                                                                                                     |
+| `scripts/matrix-research-persist.php`       | PHP      | Persist one research attempt, optional verifier decision, audit rows, and final fact status                                                                                                                      |
+| `scripts/matrix-research-loop.mjs`          | Node.js  | Repeatedly drive the one-fact matrix research pipeline until a limit fires or the queue is empty                                                                                                                 |
+| `scripts/process-suggestion-issue-codex.sh` | Bash     | Run one catalog suggestion issue through classification, catalog snapshot, fact research, verification, apply, and finalization                                                                                  |
+| `scripts/score-deep-research-folder.sh`     | Bash     | Autonomous batch runner that walks a folder of deep-research Markdown documents and scores each catalog entry through the five-stage pipeline (match → extract → verify → worksheet → DB write + API post-check) |
+| `scripts/db-backup.sh`                      | Bash     | Backup the MySQL database                                                                                                                                                                                        |
+| `scripts/db-restore.sh`                     | Bash     | Restore a database backup                                                                                                                                                                                        |
+
+### Catalog Suggestion Issue Pipeline
+
+Use the single-issue orchestrator when an issue suggests a new catalog alternative or a correction to an existing catalog fact:
+
+```bash
+bash scripts/process-suggestion-issue-codex.sh 516 --dry-run
+bash scripts/process-suggestion-issue-codex.sh 516 --max-verification-attempts 3
+```
+
+The orchestrator runs the issue through classification, a catalog snapshot, fact research, independent verification, apply, and GitHub finalization. It writes stage artifacts and `result.json` under `tmp/issues/<issue-number>/`. `--dry-run` is propagated to every stage; in dry-run mode the pipeline can research and verify, but it does not write to the database and does not mutate GitHub.
+
+Verification attempts are capped by `--max-verification-attempts <n>`, or by `EUROALT_MAX_VERIFICATION_ATTEMPTS` when the CLI flag is omitted. The default is 2 total attempts. The count includes the first research/verify pass, so `1` preserves the no-retry behavior and `2` allows one corrective pass.
+
+If the verifier returns a structurally valid review with a non-supporting verdict (`inconclusive`, `contradicts`, or `source-inaccessible`), the pipeline writes structured feedback and retries research while the attempt budget remains. The next research pass receives the original issue, the catalog snapshot, the previous research payload, and the verifier feedback. Apply/finalize only run after a verifier pass where every required evidence record is `supports`.
+
+Non-retryable verifier failures still fail closed immediately. Malformed verifier output, banned scoring/trust/reservation keys, action mismatches, missing required blocks, invalid evidence shapes, and same-source verifier evidence do not become retry feedback.
+
+Per-attempt artifacts are preserved for debugging:
+
+- `research-1.json`, `research-2.json`, ...
+- `research-fact-1.stderr.log`, `research-fact-2.stderr.log`, ...
+- `verified-action-1.json`, `verified-action-2.json`, ...
+- `verify-fact-1.stderr.log`, `verify-fact-2.stderr.log`, ...
+- `verification-feedback-1.json`, `verification-feedback-2.json`, ...
+
+The latest selected research payload is also copied to `research.json`. The successful verified action is copied to `verified-action.json` before apply/finalize so existing downstream scripts can keep using the compatibility filenames.
+
+Verifier feedback artifacts contain the failed field or change, verdict, verifier source metadata, optional reasoning, and `auditQuote` only when the verifier supplied a non-empty quote. For example, `source-inaccessible` feedback may have no `auditQuote`:
+
+```json
+{
+  "issueNumber": 516,
+  "action": "new_alternative",
+  "retryable": true,
+  "failedEvidence": [
+    {
+      "path": "newAlternative.evidence.country_code",
+      "field": "country_code",
+      "verdict": "inconclusive",
+      "sourceUrl": "https://example.com/source",
+      "sourceTitle": "Source title",
+      "accessedDate": "2026-06-11",
+      "auditQuote": "Short quote from the verifier source.",
+      "reasoning": "Why the source did not support the researched fact."
+    }
+  ]
+}
+```
+
+For fact-correction issues, feedback entries also identify the failed change with `changeIndex`, `table`, `column`, `field`, and `proposedValue` when those values are available.
+
+`result.json` keeps the batch-readable outcome. When retryable verifier feedback persists through the full budget, the orchestrator records:
+
+```json
+{
+  "writes_applied": false,
+  "outcome": "verification_retries_exhausted"
+}
+```
+
+Verifier failures that do not produce feedback keep the existing `verify_failed_rc_<code>` outcome and are not retried.
+
+When running the stage scripts directly instead of the orchestrator, `scripts/verify-fact-codex.sh` accepts `--feedback-output-file <path>` to write retry feedback, and `scripts/research-fact-codex.sh` accepts `--previous-research-file <path>` plus `--verification-feedback-file <path>` to build a corrective retry prompt.
 
 ### Matrix Research Selector
 
@@ -228,12 +293,12 @@ Successful selections print JSON to stdout:
 
 In dry-run mode, `dryRun` is `true` and `status` remains the previous fact status.
 
-| Exit code | Meaning                                                                                                                                |
-| --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`       | A fact was selected, or dry-run found the fact that would be selected.                                                                 |
+| Exit code | Meaning                                                                                                                                    |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `0`       | A fact was selected, or dry-run found the fact that would be selected.                                                                     |
 | `2`       | No matrix fact matched the requested scope and mode. The script prints `No open matrix fact available for the requested scope.` to stderr. |
-| `64`      | Invalid CLI usage, such as an unknown option, an unknown `--mode` value, or a missing option value.                                    |
-| `1`       | Database or unexpected runtime failure.                                                                                                |
+| `64`      | Invalid CLI usage, such as an unknown option, an unknown `--mode` value, or a missing option value.                                        |
+| `1`       | Database or unexpected runtime failure.                                                                                                    |
 
 ### Stale Fact Recheck Policy
 
@@ -253,14 +318,15 @@ When initial research cannot resolve a matrix fact — sources disagree, no clas
 - **Stricter source rules.** Deeper-research prompts forbid class 6 reputable-third-party fallback sources. Only class 1–5 sources may be used; if no class 1–5 source qualifies, the attempt settles back to `needs-deeper-research`.
 - **Backoff schedule (no retry ceiling).** After each `needs-deeper-research` settlement, the fact is suppressed from the deeper-research queue until the backoff window elapses:
 
-  | Failure count | Next eligible after |
-  | ------------- | ------------------- |
-  | 1             | 1 day               |
-  | 2             | 3 days              |
-  | 3             | 7 days              |
+  | Failure count | Next eligible after  |
+  | ------------- | -------------------- |
+  | 1             | 1 day                |
+  | 2             | 3 days               |
+  | 3             | 7 days               |
   | 4 and beyond  | 30 days indefinitely |
 
   Facts are never locked as "unresolvable" by the automated pipeline — the queue stays open forever, just paced.
+
 - **Audit preserved.** Every attempt, verifier record, and verifier decision is kept. Prior attempt history is never rewritten or deleted across retries.
 - **Reset on success.** When a deeper-research attempt verifies, the fact's backoff counter and next-eligible timestamp reset to zero / NULL.
 - **Public surface unchanged.** A fact in `needs-deeper-research` that was previously verified continues to render as `verified` in the public API with its prior typed value and public source. A fact that has never been verified renders as `Unverified` regardless of its internal deeper-research state.
@@ -331,11 +397,11 @@ The runner's default stage wiring matches the manual workflow above. The verifie
 
 The runner prints one compact line per completed iteration to stdout (`[iter 12] fact=987 status=verified`) and a final end summary with counts for `verified`, `rejected`, `needs-deeper-research`, `skipped`, `failed`, `no-open`, plus `processed` and `elapsed-ms`. `skipped` covers persister outcomes that fall outside the three real fact statuses; `failed` covers any non-zero exit, empty stdout, or invalid JSON from selector, researcher, verifier, or persister.
 
-| Exit code | Meaning                                                                                                                                |
-| --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`       | The loop reached a stop condition cleanly (queue empty, limit hit, or consecutive-failure cap reached).                                |
-| `1`       | The selector reported invalid usage (exit `64`), or the runner itself encountered an unexpected error.                                 |
-| `64`      | Invalid runner CLI usage, such as an unknown option or a non-positive value for a numeric flag.                                        |
+| Exit code | Meaning                                                                                                 |
+| --------- | ------------------------------------------------------------------------------------------------------- |
+| `0`       | The loop reached a stop condition cleanly (queue empty, limit hit, or consecutive-failure cap reached). |
+| `1`       | The selector reported invalid usage (exit `64`), or the runner itself encountered an unexpected error.  |
+| `64`      | Invalid runner CLI usage, such as an unknown option or a non-positive value for a numeric flag.         |
 
 ### Deep-Research Folder Scoring Runner
 
@@ -390,21 +456,36 @@ A batch-level `<output-dir>/summary.json` aggregates the run:
   "dryRun": false,
   "counts": { "processed": 7, "ready": 5, "skipped": 1, "failed": 1 },
   "documents": [
-    { "entrySlug": "primary-chat", "documentPath": "...", "status": "ready", "worksheetPath": "tmp/scoring-worksheets/primary-chat.md" },
-    { "entrySlug": "secure-mail", "documentPath": "...", "status": "skipped", "reason": "already_scored_no_replace_flag" },
-    { "entrySlug": "...", "status": "failed", "failedStage": "verify", "exitCode": 2 }
+    {
+      "entrySlug": "primary-chat",
+      "documentPath": "...",
+      "status": "ready",
+      "worksheetPath": "tmp/scoring-worksheets/primary-chat.md"
+    },
+    {
+      "entrySlug": "secure-mail",
+      "documentPath": "...",
+      "status": "skipped",
+      "reason": "already_scored_no_replace_flag"
+    },
+    {
+      "entrySlug": "...",
+      "status": "failed",
+      "failedStage": "verify",
+      "exitCode": 2
+    }
   ]
 }
 ```
 
 `processed` counts only documents the runner actually attempted post-match. Documents that stage 1 reports as `no_match` or `ambiguous_match` are counted toward `skipped`, never toward `processed`.
 
-| Exit code | Meaning                                                                                                                                |
-| --------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`       | All matched documents reached `ready` (or were intentionally `skipped`, including already-scored entries without `--replace-existing`). |
+| Exit code | Meaning                                                                                                                                                      |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `0`       | All matched documents reached `ready` (or were intentionally `skipped`, including already-scored entries without `--replace-existing`).                      |
 | `1`       | One or more documents failed. Only reachable when `--continue-on-error` is set; without that flag the first failure's exit code propagates verbatim instead. |
-| `64`      | Invalid CLI usage (missing required option, unknown option, non-numeric `--limit`).                                                    |
-| `65`      | Pre-flight failed (input directory unreadable or not a directory; catalog snapshot file missing).                                      |
+| `64`      | Invalid CLI usage (missing required option, unknown option, non-numeric `--limit`).                                                                          |
+| `65`      | Pre-flight failed (input directory unreadable or not a directory; catalog snapshot file missing).                                                            |
 
 ---
 

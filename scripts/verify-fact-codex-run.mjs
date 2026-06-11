@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -10,6 +11,7 @@ import {
   getVerifierCommand,
   mergeVerifiedAction,
   parseVerificationResponse,
+  VerificationFeedbackError,
 } from "./lib/verify-fact-codex.mjs";
 
 const INVALID_USAGE = 64;
@@ -29,6 +31,7 @@ Options:
   --research-file <path>          Read stage-2 research payload JSON from a file (required).
   --research-json <json>          Inline stage-2 research payload JSON string.
   --mock-response-file <path>     Read verifier output from a file instead of invoking codex (test seam).
+  --feedback-output-file <path>   Write structured retry feedback for non-supporting verdicts.
   --accessed-date <YYYY-MM-DD>    Override the accessed date used in the prompt and the verified_action.
   --dry-run                       Tag the emitted verified_action as dry-run.
   --repo <owner/name>             Source repo for --issue-number (default TheMorpheus407/european-alternatives).
@@ -58,6 +61,7 @@ function parseArguments(argv) {
     researchFile: null,
     researchJson: null,
     mockResponseFile: null,
+    feedbackOutputFile: null,
     accessedDate: null,
     dryRun: false,
     repo: "TheMorpheus407/european-alternatives",
@@ -86,6 +90,7 @@ function parseArguments(argv) {
       { flag: "--research-file", key: "researchFile" },
       { flag: "--research-json", key: "researchJson" },
       { flag: "--mock-response-file", key: "mockResponseFile" },
+      { flag: "--feedback-output-file", key: "feedbackOutputFile" },
       { flag: "--accessed-date", key: "accessedDate" },
       { flag: "--repo", key: "repo" },
     ];
@@ -383,6 +388,11 @@ function isUsageError(message) {
   );
 }
 
+async function writeFeedbackArtifact(filePath, feedback) {
+  await mkdir(dirname(filePath), { recursive: true });
+  await writeFile(filePath, `${JSON.stringify(feedback, null, 2)}\n`, "utf8");
+}
+
 async function main(argv) {
   let options;
 
@@ -476,6 +486,24 @@ async function main(argv) {
       accessedDate: options.accessedDate ?? undefined,
     });
   } catch (error) {
+    if (error instanceof VerificationFeedbackError) {
+      if (options.feedbackOutputFile !== null) {
+        try {
+          await writeFeedbackArtifact(
+            options.feedbackOutputFile,
+            error.feedback,
+          );
+        } catch (writeError) {
+          process.stderr.write(
+            `Feedback error: ${writeError.message}\nParse error: ${error.message}\n`,
+          );
+          return FAIL_CLOSED;
+        }
+      }
+      process.stderr.write(`Parse error: ${error.message}\n`);
+      return FAIL_CLOSED;
+    }
+
     process.stderr.write(`Parse error: ${error.message}\n`);
     return FAIL_CLOSED;
   }

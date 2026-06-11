@@ -26,6 +26,8 @@ Options:
   --classification-file <path>    Stage-1 classification JSON.
   --classification-json <json>    Inline classification JSON.
   --catalog-snapshot-file <path>  Pre-fetched catalog snapshot.
+  --previous-research-file <path> Previous research JSON for a retry attempt.
+  --verification-feedback-file <path> Verifier feedback JSON for a retry attempt.
   --mock-response-file <path>     Read researcher output from a file (test seam).
   --accessed-date <YYYY-MM-DD>    Accessed date for the research run.
   --dry-run                       Tag the emitted payload as dry-run.
@@ -64,7 +66,7 @@ while [[ "$#" -gt 0 ]]; do
             REPO="${1#--repo=}"
             shift
             ;;
-        --issue-number|--issue-file|--issue-json|--classification-file|--classification-json|--catalog-snapshot-file|--mock-response-file|--accessed-date)
+        --issue-number|--issue-file|--issue-json|--classification-file|--classification-json|--catalog-snapshot-file|--previous-research-file|--verification-feedback-file|--mock-response-file|--accessed-date)
             if [[ "$#" -lt 2 ]]; then
                 echo "error: $1 requires a value" >&2
                 exit 64
@@ -72,7 +74,7 @@ while [[ "$#" -gt 0 ]]; do
             ARGS+=("$1" "$2")
             shift 2
             ;;
-        --issue-number=*|--issue-file=*|--issue-json=*|--classification-file=*|--classification-json=*|--catalog-snapshot-file=*|--mock-response-file=*|--accessed-date=*)
+        --issue-number=*|--issue-file=*|--issue-json=*|--classification-file=*|--classification-json=*|--catalog-snapshot-file=*|--previous-research-file=*|--verification-feedback-file=*|--mock-response-file=*|--accessed-date=*)
             ARGS+=("$1")
             shift
             ;;

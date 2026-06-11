@@ -28,6 +28,7 @@ Options:
   --research-file <path>          Stage-2 research payload JSON (required).
   --research-json <json>          Inline stage-2 research payload JSON.
   --mock-response-file <path>     Read verifier output from a file (test seam).
+  --feedback-output-file <path>   Write retry feedback for non-supporting verdicts.
   --accessed-date <YYYY-MM-DD>    Accessed date for the verification run.
   --dry-run                       Tag the emitted verified_action as dry-run.
   --repo <owner/name>             Source repo for --issue-number.
@@ -65,7 +66,7 @@ while [[ "$#" -gt 0 ]]; do
             REPO="${1#--repo=}"
             shift
             ;;
-        --issue-number|--issue-file|--issue-json|--classification-file|--classification-json|--research-file|--research-json|--mock-response-file|--accessed-date)
+        --issue-number|--issue-file|--issue-json|--classification-file|--classification-json|--research-file|--research-json|--mock-response-file|--feedback-output-file|--accessed-date)
             if [[ "$#" -lt 2 ]]; then
                 echo "error: $1 requires a value" >&2
                 exit 64
@@ -73,7 +74,7 @@ while [[ "$#" -gt 0 ]]; do
             ARGS+=("$1" "$2")
             shift 2
             ;;
-        --issue-number=*|--issue-file=*|--issue-json=*|--classification-file=*|--classification-json=*|--research-file=*|--research-json=*|--mock-response-file=*|--accessed-date=*)
+        --issue-number=*|--issue-file=*|--issue-json=*|--classification-file=*|--classification-json=*|--research-file=*|--research-json=*|--mock-response-file=*|--feedback-output-file=*|--accessed-date=*)
             ARGS+=("$1")
             shift
             ;;

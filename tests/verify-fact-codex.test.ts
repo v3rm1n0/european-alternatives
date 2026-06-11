@@ -248,17 +248,16 @@ function factCorrectionVerifierPayload(
     accessedDate: "2026-05-27",
     factCorrection: {
       targetEntrySlug: "element",
-      evidence:
-        evidenceList ?? [
-          {
-            table: "catalog_entries",
-            column: "country_code",
-            proposedValue: "fr",
-            ...evidenceRecord({
-              sourceUrl: "https://societe.com/element-fr",
-            }),
-          },
-        ],
+      evidence: evidenceList ?? [
+        {
+          table: "catalog_entries",
+          column: "country_code",
+          proposedValue: "fr",
+          ...evidenceRecord({
+            sourceUrl: "https://societe.com/element-fr",
+          }),
+        },
+      ],
     },
     ...topOverrides,
   };
@@ -341,7 +340,8 @@ describe("verify-fact-codex sentinels", () => {
 
 describe("verify-fact-codex prompt builders", () => {
   it("new_alternative prompt embeds issue context, researcher payload, and same-source instruction", async () => {
-    const { buildNewAlternativeVerificationPrompt } = await loadVerifierModule();
+    const { buildNewAlternativeVerificationPrompt } =
+      await loadVerifierModule();
 
     const prompt = buildNewAlternativeVerificationPrompt(
       baselineIssue,
@@ -365,7 +365,8 @@ describe("verify-fact-codex prompt builders", () => {
   });
 
   it("new_alternative prompt forbids trust-score, scoring metadata, reservations, positive signals", async () => {
-    const { buildNewAlternativeVerificationPrompt } = await loadVerifierModule();
+    const { buildNewAlternativeVerificationPrompt } =
+      await loadVerifierModule();
 
     const prompt = buildNewAlternativeVerificationPrompt(
       baselineIssue,
@@ -380,7 +381,8 @@ describe("verify-fact-codex prompt builders", () => {
   });
 
   it("new_alternative prompt instructs verifier to not add facts or score", async () => {
-    const { buildNewAlternativeVerificationPrompt } = await loadVerifierModule();
+    const { buildNewAlternativeVerificationPrompt } =
+      await loadVerifierModule();
 
     const prompt = buildNewAlternativeVerificationPrompt(
       baselineIssue,
@@ -388,11 +390,14 @@ describe("verify-fact-codex prompt builders", () => {
       researcherNewAlternativePayload(),
     );
 
-    expect(prompt).toMatch(/do not add facts|do not propose|do not score|do not invent|not add/i);
+    expect(prompt).toMatch(
+      /do not add facts|do not propose|do not score|do not invent|not add/i,
+    );
   });
 
   it("fact_correction prompt embeds the researcher's changes and forbids slug changes", async () => {
-    const { buildFactCorrectionVerificationPrompt } = await loadVerifierModule();
+    const { buildFactCorrectionVerificationPrompt } =
+      await loadVerifierModule();
 
     const prompt = buildFactCorrectionVerificationPrompt(
       baselineIssue,
@@ -404,13 +409,16 @@ describe("verify-fact-codex prompt builders", () => {
     expect(prompt).toContain("country_code");
     expect(prompt).toMatch(/catalog_entries/);
     expect(prompt).toContain(beginSentinel);
-    expect(prompt).toMatch(/evidence must be an array with exactly one entry per researcher change/i);
+    expect(prompt).toMatch(
+      /evidence must be an array with exactly one entry per researcher change/i,
+    );
     expect(prompt).toMatch(/same order/i);
     expect(prompt).toMatch(/perform this self-check/i);
   });
 
   it("rejects an unknown action passed to the new_alternative builder", async () => {
-    const { buildNewAlternativeVerificationPrompt } = await loadVerifierModule();
+    const { buildNewAlternativeVerificationPrompt } =
+      await loadVerifierModule();
 
     expect(() =>
       buildNewAlternativeVerificationPrompt(
@@ -425,7 +433,8 @@ describe("verify-fact-codex prompt builders", () => {
   });
 
   it("rejects an unknown action passed to the fact_correction builder", async () => {
-    const { buildFactCorrectionVerificationPrompt } = await loadVerifierModule();
+    const { buildFactCorrectionVerificationPrompt } =
+      await loadVerifierModule();
 
     expect(() =>
       buildFactCorrectionVerificationPrompt(
@@ -440,7 +449,8 @@ describe("verify-fact-codex prompt builders", () => {
   });
 
   it("rejects a non-object issue", async () => {
-    const { buildNewAlternativeVerificationPrompt } = await loadVerifierModule();
+    const { buildNewAlternativeVerificationPrompt } =
+      await loadVerifierModule();
 
     expect(() =>
       buildNewAlternativeVerificationPrompt(
@@ -452,7 +462,8 @@ describe("verify-fact-codex prompt builders", () => {
   });
 
   it("rejects an issue with a missing or non-positive number", async () => {
-    const { buildNewAlternativeVerificationPrompt } = await loadVerifierModule();
+    const { buildNewAlternativeVerificationPrompt } =
+      await loadVerifierModule();
 
     expect(() =>
       buildNewAlternativeVerificationPrompt(
@@ -472,7 +483,8 @@ describe("verify-fact-codex prompt builders", () => {
   });
 
   it("rejects an issue with an empty title", async () => {
-    const { buildNewAlternativeVerificationPrompt } = await loadVerifierModule();
+    const { buildNewAlternativeVerificationPrompt } =
+      await loadVerifierModule();
 
     expect(() =>
       buildNewAlternativeVerificationPrompt(
@@ -484,7 +496,8 @@ describe("verify-fact-codex prompt builders", () => {
   });
 
   it("fact_correction prompt uses researcher's targetEntrySlug when classification lacks one", async () => {
-    const { buildFactCorrectionVerificationPrompt } = await loadVerifierModule();
+    const { buildFactCorrectionVerificationPrompt } =
+      await loadVerifierModule();
 
     const classificationWithoutSlug = {
       issueNumber: baselineIssue.number,
@@ -507,7 +520,8 @@ describe("verify-fact-codex prompt builders", () => {
   });
 
   it("fact_correction prompt falls back to '(unknown)' when neither classification nor researcher has a slug", async () => {
-    const { buildFactCorrectionVerificationPrompt } = await loadVerifierModule();
+    const { buildFactCorrectionVerificationPrompt } =
+      await loadVerifierModule();
 
     const classificationWithoutSlug = {
       issueNumber: baselineIssue.number,
@@ -736,9 +750,12 @@ describe("verify-fact-codex parser — coverage and shape", () => {
   it("rejects verifier classification.action that mismatches researcher.action", async () => {
     const { parseVerificationResponse } = await loadVerifierModule();
 
-    const payload = newAlternativeVerifierPayload({}, {
-      classification: { action: "catalog_fact_correction" },
-    });
+    const payload = newAlternativeVerifierPayload(
+      {},
+      {
+        classification: { action: "catalog_fact_correction" },
+      },
+    );
 
     expect(() =>
       parseVerificationResponse(
@@ -752,9 +769,12 @@ describe("verify-fact-codex parser — coverage and shape", () => {
   it("rejects an extra top-level key (strict allowlist)", async () => {
     const { parseVerificationResponse } = await loadVerifierModule();
 
-    const payload = newAlternativeVerifierPayload({}, {
-      extraneousField: "leak",
-    });
+    const payload = newAlternativeVerifierPayload(
+      {},
+      {
+        extraneousField: "leak",
+      },
+    );
 
     expect(() =>
       parseVerificationResponse(
@@ -835,7 +855,11 @@ describe("verify-fact-codex parser — coverage and shape", () => {
 });
 
 describe("verify-fact-codex parser — verdict semantics", () => {
-  const failingVerdicts = ["contradicts", "inconclusive", "source-inaccessible"];
+  const failingVerdicts = [
+    "contradicts",
+    "inconclusive",
+    "source-inaccessible",
+  ];
 
   for (const verdict of failingVerdicts) {
     it(`rejects when any verdict is ${verdict}`, async () => {
@@ -999,7 +1023,7 @@ describe("verify-fact-codex parser — source shape", () => {
     ).toThrow(/accessedDate|date|ISO/i);
   });
 
-  it("rejects an empty auditQuote", async () => {
+  it("rejects an empty auditQuote for supporting evidence", async () => {
     const { parseVerificationResponse } = await loadVerifierModule();
 
     expect(() =>
@@ -1104,7 +1128,11 @@ describe("verify-fact-codex parser — same-source rejection", () => {
     const { parseVerificationResponse } = await loadVerifierModule();
 
     const researcher = researcherNewAlternativePayload();
-    const sources = (researcher.newAlternative as { sources: Record<string, Record<string, unknown>> }).sources;
+    const sources = (
+      researcher.newAlternative as {
+        sources: Record<string, Record<string, unknown>>;
+      }
+    ).sources;
     sources.country_code = {
       url: "https://crypt.ee/legal",
       accessedDate: "2026-05-27",
@@ -1158,7 +1186,9 @@ describe("verify-fact-codex parser — same-source rejection", () => {
         researcherNewAlternativePayload(),
         newAlternativeClassification,
       ),
-    ).toThrow(/same.?source|same.?domain|registrable|independent|subdomain|same/i);
+    ).toThrow(
+      /same.?source|same.?domain|registrable|independent|subdomain|same/i,
+    );
   });
 
   it("accepts when verifier URL differs by registrable domain from researcher URL", async () => {
@@ -1410,10 +1440,9 @@ describe("verify-fact-codex mergeVerifiedAction", () => {
     const { mergeVerifiedAction } = await loadVerifierModule();
 
     expect(() =>
-      mergeVerifiedAction(
-        { issueNumber: 1, dryRun: false },
-        { raw: {} } as Record<string, unknown>,
-      ),
+      mergeVerifiedAction({ issueNumber: 1, dryRun: false }, {
+        raw: {},
+      } as Record<string, unknown>),
     ).toThrow(/cannot determine action|action/i);
   });
 
@@ -1587,6 +1616,297 @@ describe("verify-fact-codex runner CLI", () => {
     }
   });
 
+  it("writes structured retry feedback for a non-supporting verifier verdict", () => {
+    const tempDir = makeProjectTempDir("verify-fact-codex-");
+
+    try {
+      const inputs = writeRunnerInputs(
+        tempDir,
+        baselineIssue,
+        newAlternativeClassification,
+        researcherNewAlternativePayload(),
+        modelResponse(
+          newAlternativeVerifierPayload({
+            country_code: evidenceRecord({
+              verdict: "inconclusive",
+              sourceUrl: "https://e-estonia.com/country",
+              sourceTitle: "e-Estonia company profile",
+              auditQuote:
+                "The page names the product but not the legal entity.",
+              reasoning:
+                "The source does not independently confirm operator jurisdiction.",
+            }),
+          }),
+        ),
+      );
+      const feedbackPath = join(tempDir, "verification-feedback.json");
+
+      const result = runRunner([
+        "--issue-file",
+        inputs.issuePath,
+        "--classification-file",
+        inputs.classificationPath,
+        "--research-file",
+        inputs.researchPath,
+        "--mock-response-file",
+        inputs.mockResponsePath,
+        "--feedback-output-file",
+        feedbackPath,
+      ]);
+
+      expect(result.status).toBe(65);
+      expect(result.stdout).toBe("");
+      expect(existsSync(feedbackPath)).toBe(true);
+
+      const feedback = JSON.parse(readFileSync(feedbackPath, "utf8"));
+      expect(feedback).toMatchObject({
+        issueNumber: baselineIssue.number,
+        action: "new_alternative",
+        retryable: true,
+      });
+      expect(feedback.failedEvidence).toEqual([
+        expect.objectContaining({
+          path: "newAlternative.evidence.country_code",
+          field: "country_code",
+          verdict: "inconclusive",
+          sourceUrl: "https://e-estonia.com/country",
+          sourceTitle: "e-Estonia company profile",
+          auditQuote: "The page names the product but not the legal entity.",
+          reasoning:
+            "The source does not independently confirm operator jurisdiction.",
+        }),
+      ]);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  const sourceInaccessibleQuoteCases: Array<{
+    name: string;
+    prepare: (record: Record<string, unknown>) => void;
+  }> = [
+    {
+      name: "omitted",
+      prepare(record) {
+        delete record.auditQuote;
+      },
+    },
+    {
+      name: "null",
+      prepare(record) {
+        record.auditQuote = null;
+      },
+    },
+    {
+      name: "empty",
+      prepare(record) {
+        record.auditQuote = "";
+      },
+    },
+  ];
+
+  for (const quoteCase of sourceInaccessibleQuoteCases) {
+    it(`writes source-inaccessible retry feedback when auditQuote is ${quoteCase.name}`, () => {
+      const tempDir = makeProjectTempDir("verify-fact-codex-");
+
+      try {
+        const inaccessibleEvidence = evidenceRecord({
+          verdict: "source-inaccessible",
+          sourceUrl: "https://e-estonia.com/country",
+          sourceTitle: "e-Estonia company profile",
+          reasoning: "The verifier could not access the independent source.",
+        });
+        quoteCase.prepare(inaccessibleEvidence);
+
+        const inputs = writeRunnerInputs(
+          tempDir,
+          baselineIssue,
+          newAlternativeClassification,
+          researcherNewAlternativePayload(),
+          modelResponse(
+            newAlternativeVerifierPayload({
+              country_code: inaccessibleEvidence,
+            }),
+          ),
+        );
+        const feedbackPath = join(tempDir, "verification-feedback.json");
+
+        const result = runRunner([
+          "--issue-file",
+          inputs.issuePath,
+          "--classification-file",
+          inputs.classificationPath,
+          "--research-file",
+          inputs.researchPath,
+          "--mock-response-file",
+          inputs.mockResponsePath,
+          "--feedback-output-file",
+          feedbackPath,
+        ]);
+
+        expect(result.status).toBe(65);
+        expect(result.stdout).toBe("");
+        expect(existsSync(feedbackPath)).toBe(true);
+
+        const feedback = JSON.parse(readFileSync(feedbackPath, "utf8"));
+        expect(feedback.failedEvidence).toHaveLength(1);
+        expect(feedback.failedEvidence[0]).toMatchObject({
+          path: "newAlternative.evidence.country_code",
+          field: "country_code",
+          verdict: "source-inaccessible",
+          sourceUrl: "https://e-estonia.com/country",
+          sourceTitle: "e-Estonia company profile",
+          reasoning: "The verifier could not access the independent source.",
+        });
+        expect(feedback.failedEvidence[0]).not.toHaveProperty("auditQuote");
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    });
+  }
+
+  for (const verdict of ["contradicts", "source-inaccessible"] as const) {
+    it(`writes fact-correction retry feedback with change identity when verifier verdict is ${verdict}`, () => {
+      const tempDir = makeProjectTempDir("verify-fact-codex-");
+
+      try {
+        const inputs = writeRunnerInputs(
+          tempDir,
+          baselineIssue,
+          factCorrectionClassification,
+          researcherFactCorrectionPayload(),
+          modelResponse(
+            factCorrectionVerifierPayload([
+              {
+                table: "catalog_entries",
+                column: "country_code",
+                proposedValue: "fr",
+                ...evidenceRecord({
+                  verdict,
+                  sourceUrl: "https://societe.com/element-fr",
+                  sourceTitle: "Element - Societe.com",
+                  auditQuote: "Element SAS is registered in France.",
+                  reasoning: `The verifier reported ${verdict}.`,
+                }),
+              },
+            ]),
+          ),
+        );
+        const feedbackPath = join(tempDir, "verification-feedback.json");
+
+        const result = runRunner([
+          "--issue-file",
+          inputs.issuePath,
+          "--classification-file",
+          inputs.classificationPath,
+          "--research-file",
+          inputs.researchPath,
+          "--mock-response-file",
+          inputs.mockResponsePath,
+          "--feedback-output-file",
+          feedbackPath,
+        ]);
+
+        expect(result.status).toBe(65);
+        expect(result.stdout).toBe("");
+        expect(existsSync(feedbackPath)).toBe(true);
+
+        const feedback = JSON.parse(readFileSync(feedbackPath, "utf8"));
+        expect(feedback).toMatchObject({
+          issueNumber: baselineIssue.number,
+          action: "catalog_fact_correction",
+          retryable: true,
+        });
+        expect(feedback.failedEvidence).toEqual([
+          expect.objectContaining({
+            path: "factCorrection.evidence[0]",
+            changeIndex: 0,
+            table: "catalog_entries",
+            column: "country_code",
+            field: "country_code",
+            proposedValue: "fr",
+            verdict,
+            sourceUrl: "https://societe.com/element-fr",
+            sourceTitle: "Element - Societe.com",
+            auditQuote: "Element SAS is registered in France.",
+            reasoning: `The verifier reported ${verdict}.`,
+          }),
+        ]);
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it("does not write retry feedback for malformed verifier JSON", () => {
+    const tempDir = makeProjectTempDir("verify-fact-codex-");
+
+    try {
+      const inputs = writeRunnerInputs(
+        tempDir,
+        baselineIssue,
+        newAlternativeClassification,
+        researcherNewAlternativePayload(),
+        ["Verification complete.", beginSentinel, "{", endSentinel].join("\n"),
+      );
+      const feedbackPath = join(tempDir, "verification-feedback.json");
+
+      const result = runRunner([
+        "--issue-file",
+        inputs.issuePath,
+        "--classification-file",
+        inputs.classificationPath,
+        "--research-file",
+        inputs.researchPath,
+        "--mock-response-file",
+        inputs.mockResponsePath,
+        "--feedback-output-file",
+        feedbackPath,
+      ]);
+
+      expect(result.status).toBe(65);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toMatch(/invalid|json|parse/i);
+      expect(existsSync(feedbackPath)).toBe(false);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not write retry feedback when all verifier evidence supports the action", () => {
+    const tempDir = makeProjectTempDir("verify-fact-codex-");
+
+    try {
+      const inputs = writeRunnerInputs(
+        tempDir,
+        baselineIssue,
+        newAlternativeClassification,
+        researcherNewAlternativePayload(),
+        modelResponse(newAlternativeVerifierPayload()),
+      );
+      const feedbackPath = join(tempDir, "verification-feedback.json");
+
+      const result = runRunner([
+        "--issue-file",
+        inputs.issuePath,
+        "--classification-file",
+        inputs.classificationPath,
+        "--research-file",
+        inputs.researchPath,
+        "--mock-response-file",
+        inputs.mockResponsePath,
+        "--feedback-output-file",
+        feedbackPath,
+      ]);
+
+      expect(result.status).toBe(0);
+      expect(parseJsonObject(result.stdout).action).toBe("new_alternative");
+      expect(existsSync(feedbackPath)).toBe(false);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it("fails closed (exit 65) on same-source rejection", () => {
     const tempDir = makeProjectTempDir("verify-fact-codex-");
 
@@ -1604,6 +1924,7 @@ describe("verify-fact-codex runner CLI", () => {
           }),
         ),
       );
+      const feedbackPath = join(tempDir, "verification-feedback.json");
 
       const result = runRunner([
         "--issue-file",
@@ -1614,12 +1935,15 @@ describe("verify-fact-codex runner CLI", () => {
         inputs.researchPath,
         "--mock-response-file",
         inputs.mockResponsePath,
+        "--feedback-output-file",
+        feedbackPath,
       ]);
 
       expect(result.status).toBe(65);
       expect(result.stderr).toMatch(
         /same.?source|same.?domain|independent|registrable|same/i,
       );
+      expect(existsSync(feedbackPath)).toBe(false);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
@@ -1634,13 +1958,9 @@ describe("verify-fact-codex runner CLI", () => {
         baselineIssue,
         newAlternativeClassification,
         researcherNewAlternativePayload(),
-        modelResponse(
-          newAlternativeVerifierPayload(
-            {},
-            { trust_score: 80 },
-          ),
-        ),
+        modelResponse(newAlternativeVerifierPayload({}, { trust_score: 80 })),
       );
+      const feedbackPath = join(tempDir, "verification-feedback.json");
 
       const result = runRunner([
         "--issue-file",
@@ -1651,10 +1971,13 @@ describe("verify-fact-codex runner CLI", () => {
         inputs.researchPath,
         "--mock-response-file",
         inputs.mockResponsePath,
+        "--feedback-output-file",
+        feedbackPath,
       ]);
 
       expect(result.status).toBe(65);
       expect(result.stderr).toMatch(/trust_score|banned|extra/i);
+      expect(existsSync(feedbackPath)).toBe(false);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
@@ -1894,16 +2217,83 @@ describe("verify-fact-codex bash entrypoint", () => {
     },
   );
 
-  it.skipIf(!scriptExists)("exits with usage error code 64 on unknown options", () => {
-    const result = spawnSync(
-      "bash",
-      [verifierShellScriptPath, "--no-such-flag"],
-      { cwd: projectDir, encoding: "utf8" },
-    );
+  it.skipIf(!scriptExists)(
+    "passes --feedback-output-file through to the runner",
+    () => {
+      const tempDir = makeProjectTempDir("verify-fact-codex-");
 
-    expect(result.status).toBe(64);
-    expect(result.stderr).toMatch(/unknown/i);
-  });
+      try {
+        const inputs = writeRunnerInputs(
+          tempDir,
+          baselineIssue,
+          newAlternativeClassification,
+          researcherNewAlternativePayload(),
+          modelResponse(
+            newAlternativeVerifierPayload({
+              country_code: evidenceRecord({
+                verdict: "inconclusive",
+                sourceUrl: "https://e-estonia.com/country",
+                sourceTitle: "e-Estonia company profile",
+                auditQuote:
+                  "The page names the product but not the legal entity.",
+              }),
+            }),
+          ),
+        );
+        const feedbackPath = join(tempDir, "verification-feedback.json");
+
+        const result = spawnSync(
+          "bash",
+          [
+            verifierShellScriptPath,
+            "--issue-file",
+            inputs.issuePath,
+            "--classification-file",
+            inputs.classificationPath,
+            "--research-file",
+            inputs.researchPath,
+            "--mock-response-file",
+            inputs.mockResponsePath,
+            "--feedback-output-file",
+            feedbackPath,
+          ],
+          { cwd: projectDir, encoding: "utf8" },
+        );
+
+        expect(result.status).toBe(65);
+        expect(existsSync(feedbackPath)).toBe(true);
+        const feedback = parseJsonObject(readFileSync(feedbackPath, "utf8"));
+        expect(feedback).toMatchObject({
+          action: "new_alternative",
+          retryable: true,
+          failedEvidence: [
+            {
+              path: "newAlternative.evidence.country_code",
+              field: "country_code",
+              verdict: "inconclusive",
+              sourceUrl: "https://e-estonia.com/country",
+            },
+          ],
+        });
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.skipIf(!scriptExists)(
+    "exits with usage error code 64 on unknown options",
+    () => {
+      const result = spawnSync(
+        "bash",
+        [verifierShellScriptPath, "--no-such-flag"],
+        { cwd: projectDir, encoding: "utf8" },
+      );
+
+      expect(result.status).toBe(64);
+      expect(result.stderr).toMatch(/unknown/i);
+    },
+  );
 });
 
 describe("verify-fact-codex command lookup", () => {

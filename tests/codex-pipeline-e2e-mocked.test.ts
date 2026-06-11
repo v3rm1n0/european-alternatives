@@ -78,7 +78,10 @@ function defaultIssuePayload(issueNumber: number): IssuePayload {
 
 function classificationMockResponse(
   issueNumber: number,
-  action: "new_alternative" | "catalog_fact_correction" | "unsupported_or_unclear",
+  action:
+    | "new_alternative"
+    | "catalog_fact_correction"
+    | "unsupported_or_unclear",
   options: { proposedName?: string; targetEntrySlug?: string } = {},
 ): string {
   const classification: Record<string, unknown> = {
@@ -90,7 +93,10 @@ function classificationMockResponse(
     classification.proposedName = options.proposedName;
   }
 
-  if (action === "catalog_fact_correction" && options.targetEntrySlug !== undefined) {
+  if (
+    action === "catalog_fact_correction" &&
+    options.targetEntrySlug !== undefined
+  ) {
     classification.targetEntrySlug = options.targetEntrySlug;
   }
 
@@ -209,8 +215,7 @@ function verifyNewAlternativeMockResponse(
           sourceUrl: "https://en.wikipedia.org/wiki/Cryptee",
           sourceTitle: "Cryptee — Wikipedia",
           accessedDate,
-          auditQuote:
-            "Cryptee is an Estonian privacy-focused storage service.",
+          auditQuote: "Cryptee is an Estonian privacy-focused storage service.",
         },
         description_en: {
           verdict: "supports",
@@ -774,40 +779,34 @@ function setupPipelineHarness(options: HarnessOptions): Harness {
     realVerifyFact,
     ["--mock-response-file", verifyMockFile],
   );
-  const finalizeWrap = writeStageWrapper(
-    tempDir,
-    "finalize",
-    realFinalize,
-    [],
-  );
+  const finalizeWrap = writeStageWrapper(tempDir, "finalize", realFinalize, []);
 
   // Apply shims (for both branches).
-  const applyOutcome: Record<string, unknown> =
-    options.applyOutcome ?? {
-      ok: true,
-      issueNumber: options.issueNumber,
-      targetEntrySlug: "element",
-      dryRun: false,
-      changesApplied: [
-        {
-          table: "catalog_entries",
-          op: "update",
-          column: "country_code",
-          entry_id: 17,
-          proposedValue: "fr",
-          applied: true,
-        },
-      ],
-      sources: [
-        {
-          verdict: "supports",
-          sourceUrl: "https://societe.com/element-fr",
-          sourceTitle: "Element — Société.com",
-          accessedDate,
-          auditQuote: "Element SAS, France.",
-        },
-      ],
-    };
+  const applyOutcome: Record<string, unknown> = options.applyOutcome ?? {
+    ok: true,
+    issueNumber: options.issueNumber,
+    targetEntrySlug: "element",
+    dryRun: false,
+    changesApplied: [
+      {
+        table: "catalog_entries",
+        op: "update",
+        column: "country_code",
+        entry_id: 17,
+        proposedValue: "fr",
+        applied: true,
+      },
+    ],
+    sources: [
+      {
+        verdict: "supports",
+        sourceUrl: "https://societe.com/element-fr",
+        sourceTitle: "Element — Société.com",
+        accessedDate,
+        auditQuote: "Element SAS, France.",
+      },
+    ],
+  };
 
   const apply = writeApplyShim(tempDir, "fact", {
     exitCode: options.applyExitCode ?? 0,
@@ -892,10 +891,7 @@ describe("codex pipeline E2E (mocked) — fail-closed safety contract", () => {
         harness.env,
         harness.pathPrefix,
       );
-      expect(
-        result.status,
-        `orchestrator stderr: ${result.stderr}`,
-      ).toBe(0);
+      expect(result.status, `orchestrator stderr: ${result.stderr}`).toBe(0);
 
       // Exactly one apply call to the new-alternative branch.
       expect(harness.applyNewAltRecordPath).not.toBeNull();
@@ -947,10 +943,7 @@ describe("codex pipeline E2E (mocked) — fail-closed safety contract", () => {
         harness.env,
         harness.pathPrefix,
       );
-      expect(
-        result.status,
-        `orchestrator stderr: ${result.stderr}`,
-      ).toBe(0);
+      expect(result.status, `orchestrator stderr: ${result.stderr}`).toBe(0);
 
       const applyCalls = readApplyCalls(harness.applyRecordPath ?? "");
       expect(applyCalls.length).toBe(1);
@@ -1108,15 +1101,17 @@ describe("codex pipeline E2E (mocked) — fail-closed safety contract", () => {
     const issueNumber = 11_807;
     createdIssueNumbers.push(issueNumber);
     // Build a verifier payload missing required `evidence` array entirely.
-    const malformedVerifyMock = `${VERIFY_FACT_BEGIN_SENTINEL}\n${JSON.stringify({
-      issue: { number: issueNumber },
-      classification: { action: "catalog_fact_correction" },
-      accessedDate: "2026-05-27",
-      factCorrection: {
-        targetEntrySlug: "element",
-        // evidence intentionally omitted
+    const malformedVerifyMock = `${VERIFY_FACT_BEGIN_SENTINEL}\n${JSON.stringify(
+      {
+        issue: { number: issueNumber },
+        classification: { action: "catalog_fact_correction" },
+        accessedDate: "2026-05-27",
+        factCorrection: {
+          targetEntrySlug: "element",
+          // evidence intentionally omitted
+        },
       },
-    })}\n${VERIFY_FACT_END_SENTINEL}\n`;
+    )}\n${VERIFY_FACT_END_SENTINEL}\n`;
     const harness = setupPipelineHarness({
       issueNumber,
       classification: "catalog_fact_correction",
@@ -1181,7 +1176,7 @@ describe("codex pipeline E2E (mocked) — fail-closed safety contract", () => {
     }
   });
 
-  it("AC5b: verifier emits an inconclusive verdict — verify stage fails closed", () => {
+  it("AC5b: verifier emits inconclusive verdicts through the retry budget with no mutations", () => {
     const issueNumber = 11_809;
     createdIssueNumbers.push(issueNumber);
     const harness = setupPipelineHarness({
@@ -1195,7 +1190,7 @@ describe("codex pipeline E2E (mocked) — fail-closed safety contract", () => {
     try {
       const result = runOrchestrator(
         [String(issueNumber)],
-        harness.env,
+        { ...harness.env, EUROALT_MAX_VERIFICATION_ATTEMPTS: "2" },
         harness.pathPrefix,
       );
       expect(result.status).not.toBe(0);
@@ -1208,7 +1203,27 @@ describe("codex pipeline E2E (mocked) — fail-closed safety contract", () => {
 
       const parsed = readResultJson(issueNumber);
       expect(parsed.writes_applied).toBe(false);
-      expect(String(parsed.outcome)).toMatch(/^verify_failed_rc_/);
+      expect(parsed.outcome).toBe("verification_retries_exhausted");
+      expect(
+        existsSync(
+          join(
+            projectDir,
+            "tmp/issues",
+            String(issueNumber),
+            "verification-feedback-1.json",
+          ),
+        ),
+      ).toBe(true);
+      expect(
+        existsSync(
+          join(
+            projectDir,
+            "tmp/issues",
+            String(issueNumber),
+            "verification-feedback-2.json",
+          ),
+        ),
+      ).toBe(true);
     } finally {
       rmSync(harness.tempDir, { recursive: true, force: true });
     }
@@ -1476,10 +1491,7 @@ describe("codex pipeline E2E (mocked) — fail-closed safety contract", () => {
         harness.env,
         harness.pathPrefix,
       );
-      expect(
-        result.status,
-        `orchestrator stderr: ${result.stderr}`,
-      ).toBe(0);
+      expect(result.status, `orchestrator stderr: ${result.stderr}`).toBe(0);
 
       // Only the fact-correction apply shim was invoked; the new-alt shim
       // must stay untouched on this branch.

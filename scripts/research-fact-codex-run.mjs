@@ -26,6 +26,8 @@ Options:
   --classification-file <path>    Read stage-1 classification JSON from a file.
   --classification-json <json>    Inline classification JSON string.
   --catalog-snapshot-file <path>  Load a pre-fetched catalog snapshot (categories, countries, entries, optional current entry).
+  --previous-research-file <path> Load previous research JSON for a verification retry.
+  --verification-feedback-file <path> Load verifier feedback JSON for a verification retry.
   --mock-response-file <path>     Read researcher output from a file instead of invoking codex (test seam).
   --accessed-date <YYYY-MM-DD>    Override the accessed date that goes into the prompt and output.
   --dry-run                       Tag the emitted research payload as dry-run.
@@ -54,6 +56,8 @@ function parseArguments(argv) {
     classificationFile: null,
     classificationJson: null,
     catalogSnapshotFile: null,
+    previousResearchFile: null,
+    verificationFeedbackFile: null,
     mockResponseFile: null,
     accessedDate: null,
     dryRun: false,
@@ -81,6 +85,8 @@ function parseArguments(argv) {
       { flag: "--classification-file", key: "classificationFile" },
       { flag: "--classification-json", key: "classificationJson" },
       { flag: "--catalog-snapshot-file", key: "catalogSnapshotFile" },
+      { flag: "--previous-research-file", key: "previousResearchFile" },
+      { flag: "--verification-feedback-file", key: "verificationFeedbackFile" },
       { flag: "--mock-response-file", key: "mockResponseFile" },
       { flag: "--accessed-date", key: "accessedDate" },
       { flag: "--repo", key: "repo" },
@@ -255,6 +261,14 @@ async function loadSnapshot(options) {
   );
 }
 
+async function loadOptionalJsonFile(filePath, label) {
+  if (filePath === null) {
+    return undefined;
+  }
+
+  return parseJson(await readFile(filePath, "utf8"), label);
+}
+
 function normalizeIssue(rawIssue) {
   if (rawIssue === null || typeof rawIssue !== "object") {
     throw new Error("Issue payload must be a JSON object");
@@ -420,6 +434,23 @@ async function main(argv) {
     return INVALID_USAGE;
   }
 
+  let previousResearch;
+  let verificationFeedback;
+
+  try {
+    previousResearch = await loadOptionalJsonFile(
+      options.previousResearchFile,
+      "--previous-research-file",
+    );
+    verificationFeedback = await loadOptionalJsonFile(
+      options.verificationFeedbackFile,
+      "--verification-feedback-file",
+    );
+  } catch (error) {
+    process.stderr.write(`Invalid usage: ${error.message}\n`);
+    return INVALID_USAGE;
+  }
+
   let rawResponse;
 
   try {
@@ -433,7 +464,11 @@ async function main(argv) {
           issue,
           classification,
           snapshot,
-          { accessedDate: options.accessedDate ?? undefined },
+          {
+            accessedDate: options.accessedDate ?? undefined,
+            previousResearch,
+            verificationFeedback,
+          },
         );
       } else {
         const currentEntry = (snapshot && snapshot.entry) || {};
@@ -441,7 +476,11 @@ async function main(argv) {
           issue,
           classification,
           currentEntry,
-          { accessedDate: options.accessedDate ?? undefined },
+          {
+            accessedDate: options.accessedDate ?? undefined,
+            previousResearch,
+            verificationFeedback,
+          },
         );
       }
 
