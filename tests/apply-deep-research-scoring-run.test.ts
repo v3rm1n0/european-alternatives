@@ -161,6 +161,47 @@ describe("apply-deep-research-scoring-run wrapper", () => {
     expect(outcome?.trustScoreStatus).toBe("ready");
   });
 
+  it("happy path: accepts the catalog entry API's { data, meta } response envelope", async () => {
+    const phpOutcome = {
+      ok: true,
+      entrySlug: "example-entry",
+      dryRun: false,
+      replacedExisting: false,
+      changesApplied: [],
+    };
+    const { runner } = makePhpRunner({
+      exitCode: 0,
+      stdout: `${JSON.stringify(phpOutcome)}\n`,
+      stderr: "",
+    });
+    const { impl: fetchImpl } = makeFetchImpl(async () => {
+      return new Response(
+        JSON.stringify({
+          data: {
+            id: "example-entry",
+            trustScore: 42,
+            trustScoreStatus: "ready",
+            trustScoreBreakdown: {
+              base: 50,
+            },
+          },
+          meta: {
+            locale: "en",
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+
+    const exitCode = await main(baseArgs, { phpRunner: runner, fetchImpl });
+
+    expect(exitCode).toBe(0);
+    const outcome = findOutcomeLine(captures.stdout);
+    expect(outcome?.ok).toBe(true);
+    expect(outcome?.postCheckPassed).toBe(true);
+    expect(outcome?.trustScoreStatus).toBe("ready");
+  });
+
   it("AC failure: PHP exits 0 but the API still reports a non-ready status", async () => {
     const phpOutcome = {
       ok: true,

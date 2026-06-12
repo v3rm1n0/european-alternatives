@@ -266,11 +266,17 @@ async function performPostCheck({ apiBaseUrl, entrySlug, fetchImpl }) {
     };
   }
 
-  const observedStatus = body && typeof body === "object"
-    ? body.trustScoreStatus ?? null
+  const entry = body && typeof body === "object"
+    && body.data
+    && typeof body.data === "object"
+    ? body.data
+    : body;
+
+  const observedStatus = entry && typeof entry === "object"
+    ? entry.trustScoreStatus ?? null
     : null;
-  const breakdown = body && typeof body === "object"
-    ? body.trustScoreBreakdown ?? null
+  const breakdown = entry && typeof entry === "object"
+    ? entry.trustScoreBreakdown ?? null
     : null;
 
   if (observedStatus !== "ready") {
