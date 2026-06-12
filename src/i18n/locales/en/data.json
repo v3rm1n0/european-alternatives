@@ -33,6 +33,7 @@
     "music-streaming": { "name": "Music Streaming", "description": "Music streaming platforms and services" },
     "app-stores": { "name": "App Stores", "description": "Application stores and software distribution platforms" },
     "smartphones": { "name": "Smartphones", "description": "Smartphone manufacturers and mobile devices" },
+    "e-readers": { "name": "E-Readers", "description": "Dedicated e-ink readers, ebook devices, and paper tablets" },
     "note-taking": { "name": "Note-Taking", "description": "Note-taking apps and personal knowledge management" },
     "media-server": { "name": "Media Server", "description": "Self-hosted media servers and streaming platforms" },
     "feed-reader": { "name": "Feed Readers", "description": "RSS, Atom, and news feed readers" },
@@ -81,6 +82,7 @@
     "is": "Iceland",
     "us": "United States",
     "ca": "Canada",
+    "cn": "China",
     "eu": "Open-source (non-EU HQ)",
     "oss": "Open Source"
   },

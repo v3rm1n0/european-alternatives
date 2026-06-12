@@ -150,6 +150,7 @@ export type CategoryId =
   | "note-taking"
   | "app-stores"
   | "smartphones"
+  | "e-readers"
   | "media-server"
   | "feed-reader"
   | "scheduling"

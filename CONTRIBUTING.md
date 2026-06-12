@@ -126,6 +126,7 @@ If you're contributing a logo file via PR, make sure:
 | `databases`          | Databases             | Oracle Database, SQL Server, Amazon RDS, Cloud SQL   |
 | `payments`           | Payments              | Stripe, PayPal, Square                               |
 | `ecommerce`          | E-Commerce            | Shopify, Amazon, eBay                                |
+| `e-readers`          | E-Readers             | Amazon Kindle, Rakuten Kobo, BOOX                    |
 | `other`              | Other                 | —                                                    |
 
 Don't see a fitting category? You can [propose a new one](#adding-a-new-category).
@@ -138,7 +139,7 @@ All country codes below are valid in the type system. Note that the browse page'
 
 **Other European:** CH, NO, GB, IS
 
-**Non-European (Tier 2):** Currently US, CA in the type system — but the policy allows any jurisdiction not listed in Tier 1, provided the entry is **fully open-source** (client and server code under an OSI-approved license; see [DECISION_MATRIX.md](DECISION_MATRIX.md)). To add an alternative from a new Tier 2 country, extend `CountryCode` in `src/types/index.ts` first.
+**Non-European (Tier 2):** Currently AU, AE, CA, US, IN, JP, SA, MX, CN, VG in the type system — but the policy allows any jurisdiction not listed in Tier 1, provided the entry is **fully open-source** (client and server code under an OSI-approved license; see [DECISION_MATRIX.md](DECISION_MATRIX.md)). To add an alternative from a new Tier 2 country, extend `CountryCode` in `src/types/index.ts` first.
 
 **Multi-country:** `eu` (for pan-European services)
 

@@ -132,6 +132,10 @@
       "name": "Smartphones",
       "description": "Smartphone-Hersteller und Mobilgeräte"
     },
+    "e-readers": {
+      "name": "E-Reader",
+      "description": "Dedizierte E-Ink-Lesegeräte, E-Book-Geräte und Papier-Tablets"
+    },
     "note-taking": {
       "name": "Notizen",
       "description": "Notiz-Apps und persönliches Wissensmanagement"
@@ -219,6 +223,7 @@
     "is": "Island",
     "us": "Vereinigte Staaten",
     "ca": "Kanada",
+    "cn": "China",
     "eu": "Open Source (Nicht-EU-HQ)",
     "oss": "Open Source"
   },
