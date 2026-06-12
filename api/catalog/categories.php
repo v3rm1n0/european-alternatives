@@ -32,7 +32,7 @@ try {
             {$nameCol}        AS name,
             {$descCol}        AS description,
             c.sort_order,
-            COUNT(ec.entry_id) AS alternative_count
+            COUNT(ce.id) AS alternative_count
         FROM categories c
         LEFT JOIN entry_categories ec ON ec.category_id = c.id
         LEFT JOIN catalog_entries ce  ON ce.id = ec.entry_id

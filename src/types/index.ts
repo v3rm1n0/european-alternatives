@@ -103,6 +103,7 @@ export type CountryCode =
   // Tier 2 — Non-Tier-1 jurisdictions (extend as needed)
   | "au"
   | "ae"
+  | "br"
   | "ca"
   | "us"
   | "in"

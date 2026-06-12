@@ -122,6 +122,7 @@ If you're contributing a logo file via PR, make sure:
 | `password-manager`   | Password Manager      | LastPass, 1Password, Dashlane                        |
 | `2fa-authenticator`  | 2FA Authenticators    | Google Authenticator, Microsoft Authenticator, Authy |
 | `ai-ml`              | AI & Machine Learning | OpenAI, Google AI, AWS AI                            |
+| `game-stores`        | Game Stores & Launchers | Steam, Epic Games Store, EA app                    |
 | `hosting`            | Cloud & Hosting       | AWS, Google Cloud, Azure, Cloudflare                 |
 | `databases`          | Databases             | Oracle Database, SQL Server, Amazon RDS, Cloud SQL   |
 | `payments`           | Payments              | Stripe, PayPal, Square                               |

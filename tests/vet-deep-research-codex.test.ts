@@ -281,6 +281,21 @@ describe("vet-deep-research-codex matchDocument", () => {
     expect(result.matchedVia).toEqual(["frontmatter"]);
   });
 
+  it("treats front-matter entry_slug as authoritative even when body URLs cite other catalog hosts", async () => {
+    const { matchDocument } = await loadLibModule();
+
+    const result = matchDocument({
+      documentPath: "tmp/deep/nextcloud.md",
+      content:
+        "---\nentry_slug: nextcloud\n---\n# body\nCitation: https://proton.me/blog/source\n",
+      snapshotEntries: baselineSnapshot.entries,
+    });
+
+    expect(result.entrySlug).toBe("nextcloud");
+    expect(result.reason).toBeUndefined();
+    expect(result.matchedVia).toEqual(["frontmatter"]);
+  });
+
   it("adds 'website' to matchedVia when a body URL corroborates the filename match", async () => {
     const { matchDocument } = await loadLibModule();
 

@@ -223,6 +223,16 @@ export function matchDocument({
   ) {
     primarySlug = frontmatter.entry_slug.trim();
     primarySource = "frontmatter";
+    const entry = bySlug.get(primarySlug);
+
+    if (entry === undefined) {
+      return {
+        documentPath,
+        reason: "no_match",
+      };
+    }
+
+    return entryToResult(entry, documentPath, [primarySource]);
   } else if (filenameSlug !== "") {
     primarySlug = filenameSlug;
     primarySource = "filename";
