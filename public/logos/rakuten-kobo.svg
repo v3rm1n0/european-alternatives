@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-labelledby="title">
+  <title id="title">Rakuten Kobo logo</title>
+  <rect width="320" height="320" rx="64" fill="#bf0000"/>
+  <circle cx="160" cy="160" r="92" fill="#ffffff"/>
+  <text x="160" y="178" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="62" font-weight="700" fill="#bf0000">Kobo</text>
+</svg>

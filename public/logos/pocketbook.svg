@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-labelledby="title">
+  <title id="title">PocketBook logo</title>
+  <rect width="320" height="320" rx="64" fill="#ffffff"/>
+  <path d="M86 84h148c14 0 24 10 24 24v104c0 14-10 24-24 24H86c-14 0-24-10-24-24V108c0-14 10-24 24-24z" fill="#f58220"/>
+  <path d="M104 116h92c19 0 34 15 34 34s-15 34-34 34h-50v38h-42V116zm42 36h46c7 0 12-5 12-12s-5-12-12-12h-46v24z" fill="#ffffff"/>
+</svg>
