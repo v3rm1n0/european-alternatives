@@ -31,6 +31,7 @@
     "version-control": { "name": "Version Control Services", "description": "Version control services and platforms" },
     "iam": { "name": "Identity & Access Management", "description": "Identity providers, SSO, authentication, and access management" },
     "music-streaming": { "name": "Music Streaming", "description": "Music streaming platforms and services" },
+    "game-stores": { "name": "Game Stores & Launchers", "description": "Game storefronts, launchers, library managers, and compatibility runners" },
     "app-stores": { "name": "App Stores", "description": "Application stores and software distribution platforms" },
     "smartphones": { "name": "Smartphones", "description": "Smartphone manufacturers and mobile devices" },
     "e-readers": { "name": "E-Readers", "description": "Dedicated e-ink readers, ebook devices, and paper tablets" },

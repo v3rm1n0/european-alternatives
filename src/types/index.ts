@@ -146,6 +146,7 @@ export type CategoryId =
   | "ecommerce"
   | "version-control"
   | "music-streaming"
+  | "game-stores"
   | "iam"
   | "note-taking"
   | "app-stores"
