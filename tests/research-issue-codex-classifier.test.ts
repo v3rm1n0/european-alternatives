@@ -71,6 +71,21 @@ const baselineIssue: IssueInput = {
   url: "https://github.com/TheMorpheus407/european-alternatives/issues/4711",
 };
 
+const graphiteLikeIssue: IssueInput = {
+  number: 370,
+  title: "New Alternative: Graphite",
+  body: [
+    "Graphite is a US-based design and graphics editor.",
+    "",
+    "- Website: https://www.graphite.art",
+    "- Source: https://github.com/GraphiteEditor/Graphite",
+    "- License: Apache-2.0",
+    "- Replaces: Affinity / Adobe products",
+  ].join("\n"),
+  comments: [],
+  url: "https://github.com/TheMorpheus407/european-alternatives/issues/370",
+};
+
 function modelResponse(payload: unknown): string {
   return [
     "Classification complete.",
@@ -93,9 +108,7 @@ function newAlternativePayload(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function catalogFactCorrectionPayload(
-  overrides: Record<string, unknown> = {},
-) {
+function catalogFactCorrectionPayload(overrides: Record<string, unknown> = {}) {
   return {
     issue: { number: baselineIssue.number },
     classification: {
@@ -176,6 +189,35 @@ describe("issue classifier prompt builder", () => {
     expect(prompt).toMatch(/one valid JSON object accepted by JSON\.parse/i);
     expect(prompt).toMatch(/new_alternative includes proposedName/i);
     expect(prompt).toMatch(/catalog_fact_correction includes targetEntrySlug/i);
+  });
+
+  it("allows concrete fully open source non-European suggestions to proceed as new_alternative", async () => {
+    const { buildIssueClassificationPrompt } = await loadClassifierModule();
+
+    const prompt = buildIssueClassificationPrompt(graphiteLikeIssue);
+
+    expect(prompt).toContain("Graphite");
+    expect(prompt).toContain("https://github.com/GraphiteEditor/Graphite");
+    expect(prompt).toContain("Apache-2.0");
+    expect(prompt).toMatch(/new_alternative/i);
+    expect(prompt).toMatch(/fully open source/i);
+    expect(prompt).toMatch(/non[- ]European/i);
+    expect(prompt).toMatch(/source (repository|repo)|source\/license/i);
+    expect(prompt).toMatch(/downstream research and verification/i);
+  });
+
+  it("keeps unsupported_or_unclear for non-European candidates without full open-source evidence", async () => {
+    const { buildIssueClassificationPrompt } = await loadClassifierModule();
+
+    const prompt = buildIssueClassificationPrompt(baselineIssue);
+
+    expect(prompt).toMatch(/unsupported_or_unclear/i);
+    expect(prompt).toMatch(/merely claims? ["']?open source["']?/i);
+    expect(prompt).toMatch(/without enough .*source.*detail/i);
+    expect(prompt).toMatch(/proprietary/i);
+    expect(prompt).toMatch(/partial|open[- ]core/i);
+    expect(prompt).toMatch(/source[- ]available/i);
+    expect(prompt).toMatch(/OSI license/i);
   });
 
   it("embeds the issue number, title, body, and every comment for grounded classification", async () => {
@@ -333,6 +375,46 @@ describe("issue classifier runner CLI", () => {
         issueNumber: baselineIssue.number,
         action: "new_alternative",
       });
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("emits new_alternative for a concrete fully open source non-European suggestion", () => {
+    const tempDir = makeProjectTempDir("research-issue-codex-");
+
+    try {
+      const { issuePath, mockResponsePath } = writeIssueAndResponse(
+        tempDir,
+        graphiteLikeIssue,
+        modelResponse({
+          issue: { number: graphiteLikeIssue.number },
+          classification: {
+            action: "new_alternative",
+            proposedName: "Graphite",
+            reasoning:
+              "The issue proposes one US-based candidate with a public source repository and Apache-2.0 license for downstream verification.",
+          },
+        }),
+      );
+
+      const result = runRunner([
+        "--issue-file",
+        issuePath,
+        "--mock-response-file",
+        mockResponsePath,
+      ]);
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).toBe("");
+      const parsed = parseJsonObject(result.stdout);
+
+      expect(parsed).toMatchObject({
+        issueNumber: graphiteLikeIssue.number,
+        action: "new_alternative",
+        proposedName: "Graphite",
+      });
+      expect(parsed.reasoning).toMatch(/source repository|Apache-2\.0/i);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }
@@ -549,15 +631,18 @@ describe("issue classifier bash entrypoint", () => {
     },
   );
 
-  it.skipIf(!scriptExists)("supports --help without any network or model call", () => {
-    const result = spawnSync("bash", [classifierShellScriptPath, "--help"], {
-      cwd: projectDir,
-      encoding: "utf8",
-    });
+  it.skipIf(!scriptExists)(
+    "supports --help without any network or model call",
+    () => {
+      const result = spawnSync("bash", [classifierShellScriptPath, "--help"], {
+        cwd: projectDir,
+        encoding: "utf8",
+      });
 
-    expect(result.status).toBe(0);
-    expect(result.stdout).toMatch(/usage/i);
-  });
+      expect(result.status).toBe(0);
+      expect(result.stdout).toMatch(/usage/i);
+    },
+  );
 
   it.skipIf(!scriptExists)(
     "exits with usage error code 64 when invoked with no arguments",
@@ -596,9 +681,11 @@ describe("issue classifier prompt builder input validation", () => {
       /object/i,
     );
     expect(() =>
-      buildIssueClassificationPrompt(
-        ["array", "not", "object"] as unknown as IssueInput,
-      ),
+      buildIssueClassificationPrompt([
+        "array",
+        "not",
+        "object",
+      ] as unknown as IssueInput),
     ).toThrow(/object/i);
   });
 
@@ -746,9 +833,9 @@ describe("issue classifier response parser — extracted optional fields", () =>
   it("rejects an empty or non-string rawResponse", async () => {
     const { parseIssueClassificationResponse } = await loadClassifierModule();
 
-    expect(() =>
-      parseIssueClassificationResponse("", baselineIssue),
-    ).toThrow(/non-empty|response/i);
+    expect(() => parseIssueClassificationResponse("", baselineIssue)).toThrow(
+      /non-empty|response/i,
+    );
     expect(() =>
       parseIssueClassificationResponse(
         null as unknown as string,

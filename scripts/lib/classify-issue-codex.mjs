@@ -69,10 +69,7 @@ function extractDelimitedJson(rawResponse) {
   }
 
   return rawResponse
-    .slice(
-      beginIndex + ISSUE_CLASSIFICATION_BEGIN_SENTINEL.length,
-      endIndex,
-    )
+    .slice(beginIndex + ISSUE_CLASSIFICATION_BEGIN_SENTINEL.length, endIndex)
     .trim();
 }
 
@@ -93,8 +90,7 @@ function formatComment(comment, index) {
       : "unknown";
   const createdAt =
     comment && typeof comment.createdAt === "string" ? comment.createdAt : "";
-  const body =
-    comment && typeof comment.body === "string" ? comment.body : "";
+  const body = comment && typeof comment.body === "string" ? comment.body : "";
   const header = createdAt
     ? `Comment ${index + 1} by @${author} (${createdAt}):`
     : `Comment ${index + 1} by @${author}:`;
@@ -130,8 +126,7 @@ export function buildIssueClassificationPrompt(issue) {
   }
 
   const title = assertNonEmptyString(issueRecord.title, "issue.title");
-  const body =
-    typeof issueRecord.body === "string" ? issueRecord.body : "";
+  const body = typeof issueRecord.body === "string" ? issueRecord.body : "";
   const comments = Array.isArray(issueRecord.comments)
     ? issueRecord.comments
     : [];
@@ -139,9 +134,9 @@ export function buildIssueClassificationPrompt(issue) {
   const commentsBlock =
     comments.length === 0
       ? "No comments."
-      : comments.map((comment, index) => formatComment(comment, index)).join(
-          "\n\n",
-        );
+      : comments
+          .map((comment, index) => formatComment(comment, index))
+          .join("\n\n");
 
   return `You are the intake classifier for the European Alternatives catalog suggestion pipeline.
 
@@ -164,12 +159,15 @@ Non-negotiable scope:
 - If the issue is ambiguous, off-topic, a duplicate, spam, a feature request, or a generic support question, classify it as unsupported_or_unclear and stop.
 
 Allowed actions (choose exactly one):
-- new_alternative: the issue proposes adding a new European alternative that is not yet in the catalog.
+- new_alternative: the issue proposes adding one candidate product/service/organization that could be an eligible catalog alternative and is not yet in the catalog. Eligible candidates include European alternatives and non-European candidates that the issue identifies as fully open source with concrete source/license information. The classifier only routes sufficiently concrete candidates; downstream research and verification decide final eligibility and insertability.
 - catalog_fact_correction: the issue reports that a fact about an existing catalog entry (country, pricing, open-source status, URL, category, tags, replacements, etc.) is incorrect or stale.
 - unsupported_or_unclear: the issue does not clearly fit either of the above, is a support question, a duplicate, spam, or otherwise outside scope.
 
 Classification rules:
 - Choose new_alternative only when the issue proposes adding one candidate product/service/organization to the catalog.
+- Do not reject a single non-European candidate solely because it is non-European when the issue provides concrete fully open source signals, such as a public source repository plus an OSI license or an explicit full-open-source claim.
+- If the issue merely claims "open source" without enough product/source detail to research, classify it as unsupported_or_unclear.
+- If the issue indicates a non-European candidate is proprietary, partial/open-core only, source-available without an OSI license, or otherwise not fully open source, classify it as unsupported_or_unclear unless it is clearly a correction for an existing catalog entry.
 - Choose catalog_fact_correction only when the issue is about changing facts for an existing catalog entry.
 - Choose unsupported_or_unclear when multiple unrelated candidates are bundled together, the target is unclear, the issue is a design/feature/task request, or the issue cannot safely proceed as one catalog mutation.
 
@@ -220,10 +218,7 @@ Replace the action with exactly one of ${CLASSIFICATION_ACTIONS.join(
 }
 
 function validateClassificationBlock(rawClassification) {
-  const classification = assertPlainObject(
-    rawClassification,
-    "classification",
-  );
+  const classification = assertPlainObject(rawClassification, "classification");
 
   if (!("action" in classification)) {
     throw new Error("classification.action is required");
